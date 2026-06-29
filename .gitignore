@@ -1,0 +1,7 @@
+node_modules
+*.db
+.env
+.env.production
+.netlify
+dist
+server/storage

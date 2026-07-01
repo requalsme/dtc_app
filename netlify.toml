@@ -1,14 +1,6 @@
 [build]
-  command = "cd server && npm install && cd ../dare-to-care-forms && npm install && npm run build"
+  command = "cd dare-to-care-forms && npm install && npm run build"
   publish = "dare-to-care-forms/dist"
-
-[functions]
-  node_bundler = "esbuild"
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
-  status = 200
 
 [[redirects]]
   from = "/*"

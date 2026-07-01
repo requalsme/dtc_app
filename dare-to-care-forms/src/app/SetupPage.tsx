@@ -1,68 +1,100 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { setDoc, doc, getDocs, collection, limit, query } from "firebase/firestore";
+import { auth, db } from "../config/firebase";
 
 export default function SetupPage() {
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<"welcome" | "form" | "done">("welcome");
-  const [name, setName] = useState("Dare to Care Admin");
-  const [username, setUsername] = useState("daretocarehc");
-  const [password, setPassword] = useState("Placeholder2002!");
+  
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    import("firebase/firestore").then(async ({ getDocs, collection, limit, query }) => {
+    // Check if there are ANY users in the database. If there are, setup is locked.
+    const checkSetupStatus = async () => {
       try {
-        const { db } = await import("../config/firebase");
         const usersSnap = await getDocs(query(collection(db, "users"), limit(1)));
         if (!usersSnap.empty) {
+          // A user exists, redirect to login
           navigate('/login');
         } else {
-          // We assume setup is required if no users
           setLoading(false);
         }
-      } catch {
-        setError("Could not connect to Firebase.");
+      } catch (err) {
+        setError("Could not connect to database to verify setup status.");
         setLoading(false);
       }
-    }).catch(console.error);
+    };
+    checkSetupStatus();
   }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 10) { setError("Password must be at least 10 characters."); return; }
+    
+    // Validation
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (!name.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
-    try {
-      const { createUserWithEmailAndPassword } = await import("firebase/auth");
-      const { setDoc, doc } = await import("firebase/firestore");
-      const { auth, db } = await import("../config/firebase");
 
-      // In Firebase, username acts as the email
-      const userCred = await createUserWithEmailAndPassword(auth, username, password);
+    try {
+      // 1. Create the user in Firebase Auth
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
       
+      // 2. Determine initials for avatar
       const initials = name.split(' ').map(s => s[0]).join('').toUpperCase().slice(0, 2) || '?';
       
+      // 3. Create the user document in Firestore with the exact Auth UID
       await setDoc(doc(db, "users", userCred.user.uid), {
-        name,
-        username,
+        name: name.trim(),
+        username: email.toLowerCase(), // Use email as username for consistency
+        email: email.toLowerCase(),
         initials,
         role: "admin",
         status: "active",
         mustChangePassword: false,
         createdAt: new Date().toISOString(),
-        lastLoginAt: null
+        lastLoginAt: new Date().toISOString(),
       });
 
-      // Firebase automatically signs them in after creation, so we can just log them out for a fresh start or let them proceed.
-      // We'll just sign them out and let them log in normally.
-      await auth.signOut();
+      // 4. Firebase automatically signs them in! 
+      setStep("done");
       
-      navigate('/login', { state: { message: "Setup complete! Please log in." } });
+      // Navigate straight to the admin dashboard after a brief delay
+      setTimeout(() => {
+        navigate("/admin", { replace: true });
+      }, 2500);
+
     } catch (err: any) {
-      setError(err.message);
+      console.error(err);
+      // Friendly Firebase error messages
+      if (err.code === "auth/email-already-in-use") {
+        setError("An account with this email already exists.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Your password is too weak. Please use a stronger password.");
+      } else {
+        setError(err.message || "Failed to create administrator account.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -73,7 +105,7 @@ export default function SetupPage() {
       <div className="setup-page">
         <div className="setup-loader">
           <div className="setup-spinner" />
-          <span>Loading…</span>
+          <span>Verifying environment…</span>
         </div>
       </div>
     );
@@ -101,21 +133,22 @@ export default function SetupPage() {
         </div>
 
         {step === "done" ? (
-          <div className="setup-done">
-            <div className="setup-done-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="32" height="32">
+          <div className="setup-done" style={{ animation: "fadeIn 0.5s ease" }}>
+            <div className="setup-done-icon" style={{ background: "var(--accent-1)", color: "#fff", padding: 16, borderRadius: "50%", marginBottom: 16, display: "inline-block" }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" width="32" height="32">
                 <path d="M20 6L9 17l-5-5"/>
               </svg>
             </div>
             <h2>You're all set!</h2>
-            <p>Your administrator account has been created. Redirecting you to sign in…</p>
+            <p>Your administrator account has been created and you are securely logged in.</p>
+            <p style={{ color: "var(--ink-3)", fontSize: 13, marginTop: 8 }}>Routing you to the dashboard...</p>
           </div>
         ) : step === "welcome" ? (
           <div className="setup-welcome">
             <div className="setup-welcome-badge">First-time setup</div>
             <h1 className="setup-welcome-title">Welcome to Dare to Care</h1>
             <p className="setup-welcome-desc">
-              This looks like a fresh installation. Let's create your administrator account so you can start managing your team, clients, and forms.
+              This looks like a fresh installation. Let's create your master administrator account to secure the platform.
             </p>
             <div className="setup-welcome-features">
               <div className="setup-feature">
@@ -158,48 +191,48 @@ export default function SetupPage() {
               Back
             </button>
             <h2 className="setup-form-title">Create your account</h2>
-            <p className="setup-form-sub">These credentials are pre-filled with the recommended defaults. You can change them now or update them later from the admin panel.</p>
+            <p className="setup-form-sub">Set up your secure master administrator credentials below. You will use these to log into the platform.</p>
 
             {error && <div className="setup-error">{error}</div>}
 
             <form className="setup-form" onSubmit={handleSubmit}>
               <div className="setup-field">
-                <label htmlFor="setup-name">Display name</label>
+                <label htmlFor="setup-name">Full Name</label>
                 <input
                   id="setup-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Your full name"
+                  placeholder="e.g. Jane Doe"
                   required
                   autoComplete="name"
                 />
               </div>
 
               <div className="setup-field">
-                <label htmlFor="setup-username">Username</label>
+                <label htmlFor="setup-email">Admin Email Address</label>
                 <input
-                  id="setup-username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ""))}
-                  placeholder="admin"
+                  id="setup-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@daretocare.com"
                   required
-                  autoComplete="username"
+                  autoComplete="email"
                 />
               </div>
 
               <div className="setup-field">
-                <label htmlFor="setup-password">Password</label>
+                <label htmlFor="setup-password">Secure Password</label>
                 <div className="setup-password-wrap">
                   <input
                     id="setup-password"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="At least 10 characters"
+                    placeholder="At least 8 characters"
                     required
-                    minLength={10}
+                    minLength={8}
                     autoComplete="new-password"
                   />
                   <button type="button" className="setup-eye" onClick={() => setShowPassword((v) => !v)} tabIndex={-1} aria-label={showPassword ? "Hide password" : "Show password"}>
@@ -212,9 +245,29 @@ export default function SetupPage() {
                 </div>
               </div>
 
-              <button className="setup-submit" type="submit" disabled={submitting}>
+              <div className="setup-field">
+                <label htmlFor="setup-confirm-password">Confirm Password</label>
+                <div className="setup-password-wrap">
+                  <input
+                    id="setup-confirm-password"
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Type your password again"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    style={{ borderColor: confirmPassword && password !== confirmPassword ? "var(--danger)" : undefined }}
+                  />
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <span style={{ color: "var(--danger)", fontSize: 11.5, marginTop: 4, display: "block" }}>Passwords do not match</span>
+                )}
+              </div>
+
+              <button className="setup-submit" type="submit" disabled={submitting || (!!confirmPassword && password !== confirmPassword)}>
                 {submitting ? (
-                  <><div className="setup-spinner-sm" /> Creating account…</>
+                  <><div className="setup-spinner-sm" /> Securing account…</>
                 ) : (
                   <>Complete setup</>
                 )}

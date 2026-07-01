@@ -10,7 +10,7 @@ export interface AppUser {
   name: string;
   initials: string;
   role: Role;
-  username: string;
+  email: string;
   status: string;
   mustChangePassword?: boolean;
   createdAt?: string;
@@ -23,7 +23,7 @@ interface AuthContextValue {
   user: AppUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<AppUser>;
+  login: (email: string, password: string) => Promise<AppUser>;
   logout: () => Promise<void>;
   /** Admin-only: enter preview mode as another role */
   enterPreview: (role: Role) => void;
@@ -63,10 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  const login = async (username: string, password: string) => {
-    // If they didn't type an email address, append our local suffix to trick Firebase Auth
-    const authEmail = username.includes('@') ? username : `${username.toLowerCase()}@daretocare.local`;
-    const userCredential = await signInWithEmailAndPassword(auth, authEmail, password);
+  const login = async (email: string, password: string) => {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
     
     if (userDoc.exists()) {

@@ -14,7 +14,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(location.state?.message || null);
@@ -37,7 +37,7 @@ export default function LoginPage() {
     setMessage(null);
 
     try {
-      const user = await login(username, password);
+      const user = await login(email, password);
       if (user.mustChangePassword) {
         navigate('/change-password', { replace: true });
       } else {
@@ -76,12 +76,12 @@ export default function LoginPage() {
 
           <form className="login-form" onSubmit={submit}>
             <label className="login-field">
-              <span>Username</span>
+              <span>Email Address</span>
               <input 
-                type="text"
-                value={username} 
-                onChange={(event) => setUsername(event.target.value)} 
-                autoComplete="username" 
+                type="email"
+                value={email} 
+                onChange={(event) => setEmail(event.target.value)} 
+                autoComplete="email" 
                 required 
               />
             </label>

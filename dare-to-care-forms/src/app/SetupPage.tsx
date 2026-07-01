@@ -9,7 +9,7 @@ export default function SetupPage() {
   const [step, setStep] = useState<"welcome" | "form" | "done">("welcome");
   
   const [name, setName] = useState("");
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -58,9 +58,8 @@ export default function SetupPage() {
     setError("");
 
     try {
-      // 1. Create the user in Firebase Auth using a mock email since the client doesn't use real emails
-      const authEmail = `${username.toLowerCase()}@daretocare.local`;
-      const userCred = await createUserWithEmailAndPassword(auth, authEmail, password);
+      // 1. Create the user in Firebase Auth
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
       
       // 2. Determine initials for avatar
       const initials = name.split(' ').map(s => s[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -68,7 +67,7 @@ export default function SetupPage() {
       // 3. Create the user document in Firestore with the exact Auth UID
       await setDoc(doc(db, "users", userCred.user.uid), {
         name: name.trim(),
-        username: username.toLowerCase(),
+        email: email.toLowerCase(),
         initials,
         role: "admin",
         status: "active",
@@ -210,15 +209,15 @@ export default function SetupPage() {
               </div>
 
               <div className="setup-field">
-                <label htmlFor="setup-username">Admin Username</label>
+                <label htmlFor="setup-email">Admin Email Address</label>
                 <input
-                  id="setup-username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value.replace(/\s/g, ""))}
-                  placeholder="e.g. admin"
+                  id="setup-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value.toLowerCase().replace(/\s/g, ""))}
+                  placeholder="e.g. admin@daretocare.com"
                   required
-                  autoComplete="username"
+                  autoComplete="email"
                 />
               </div>
 

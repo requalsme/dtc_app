@@ -303,7 +303,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span className="shell-avatar">{user.initials}</span>
             <span className="shell-user-info">
               <strong>{user.name}</strong>
-              <span>{isPreviewMode ? `Admin · Previewing ${roleLabels[displayRole]}` : user.username}</span>
+              <span>{isPreviewMode ? `Admin · Previewing ${roleLabels[displayRole]}` : user.email}</span>
             </span>
             <NavIcon name="chevDown" />
           </div>

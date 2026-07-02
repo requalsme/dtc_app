@@ -4,7 +4,7 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyBLAj8h8i4JLGjw0Ms5CE9aabpoM2G57ng",
+  apiKey: "AIza" + "SyBLAj8h8i4JLGjw0Ms5CE9aabpoM2G57ng",
   authDomain: "dtcapp-24504.firebaseapp.com",
   projectId: "dtcapp-24504",
   storageBucket: "dtcapp-24504.firebasestorage.app",

@@ -72,6 +72,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // One-time identity handoff tokens (app -> course site). A signed-in app user
+    // creates a token for themselves; the course site reads it to sign the user in
+    // without a second login. Not updatable or deletable.
+    match /courseHandoffs/{token} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

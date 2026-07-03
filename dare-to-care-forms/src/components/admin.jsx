@@ -1209,7 +1209,9 @@ function Certificates({ onToast }) {
           </thead>
           <tbody>
             {certs.map((c) => {
-              const linked = users.find((u) => u.id === c.linkedUserId);
+              // Auto-match by email (from the app handoff); fall back to a manual link.
+              const linked = users.find((u) => u.id === c.linkedUserId)
+                || users.find((u) => c.email && (u.email || "").toLowerCase() === String(c.email).toLowerCase());
               return (
                 <tr key={c.id}>
                   <td>

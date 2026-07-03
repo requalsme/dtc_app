@@ -95,12 +95,14 @@ export default function NewHirePortal() {
   const [formDone, setFormDone] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [myForms, setMyForms] = useState<any[]>([]);
+  const [myCerts, setMyCerts] = useState<any[]>([]);
 
   useEffect(() => {
     void Store.refresh().catch(() => {});
     const update = () => {
       const uid = user?.id;
       setMyForms(Store.getSubmissions().filter((s: any) => s.caregiverId === uid));
+      setMyCerts(Store.certificatesForUser ? Store.certificatesForUser(user) : []);
     };
     update();
     return Store.subscribe(update);
@@ -181,7 +183,7 @@ export default function NewHirePortal() {
           return (
             <div
               key={step.id}
-              className={`newhire-step ${isDone ? "done" : ""} ${isLocked ? "locked" : ""}`}
+              className={`newhire-step ${isDone ? "is-done" : ""} ${isLocked ? "locked" : ""}`}
             >
               <div className="newhire-step-num">
                 {isDone ? <CheckIcon /> : isLocked ? <LockIcon /> : idx + 1}
@@ -197,7 +199,7 @@ export default function NewHirePortal() {
               </div>
               {!isLocked && (
                 <button
-                  className={`newhire-step-action ${isDone ? "done" : ""}`}
+                  className={`newhire-step-action ${isDone ? "is-done" : ""}`}
                   onClick={() => {
                     if (isDone) return;
                     if (step.training) { setActiveVideoStep(step); return; }
@@ -253,6 +255,27 @@ export default function NewHirePortal() {
                 </button>
               );
             })}
+          </div>
+        </>
+      )}
+
+      {myCerts.length > 0 && (
+        <>
+          <div className="newhire-section-title">Your training certificates</div>
+          <div className="card" style={{ padding: "4px 16px" }}>
+            {myCerts.map((c: any) => (
+              <div className="subrow" key={c.id}>
+                <span className="si"><Icon n="checkCircle" s={18} /></span>
+                <span className="sinfo">
+                  <span className="nm">{c.courseTitle || c.courseId}</span>
+                  <span className="meta">
+                    {c.score != null ? `${c.score}% · ` : ""}
+                    {c.date ? fmtDate(String(c.date).slice(0, 10)) : ""} · from courses.daretocarehomecare.com
+                  </span>
+                </span>
+                <span className="stat ok">Passed</span>
+              </div>
+            ))}
           </div>
         </>
       )}

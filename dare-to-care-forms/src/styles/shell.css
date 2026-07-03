@@ -1311,7 +1311,7 @@ html, body, #root {
   transition: all 0.18s ease;
 }
 
-.newhire-step.done {
+.newhire-step.is-done {
   background: rgba(235, 247, 242, 0.8);
   border-color: rgba(47, 138, 104, 0.25);
 }
@@ -1333,7 +1333,7 @@ html, body, #root {
   color: var(--accent-2);
 }
 
-.newhire-step.done .newhire-step-num {
+.newhire-step.is-done .newhire-step-num {
   background: var(--accent);
   color: white;
 }
@@ -1365,7 +1365,7 @@ html, body, #root {
   transition: background 0.15s;
 }
 .newhire-step-action:hover { background: var(--accent-2); }
-.newhire-step-action.done { background: rgba(47, 138, 104, 0.15); color: var(--accent-2); }
+.newhire-step-action.is-done { background: rgba(47, 138, 104, 0.15); color: var(--accent-2); }
 
 /* ── Client Portal ──────────────────────────────────────────────────────── */
 .client-portal {

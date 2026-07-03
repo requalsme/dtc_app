@@ -305,7 +305,7 @@ function WizardIntro({ schema, needsClient, client, setClient }: any) {
         </div>
       ) : (
         <div className="card" style={{ background: "var(--surface-3)", textAlign: "center", fontSize: 13, color: "var(--ink-2)" }}>
-          This acknowledgement is about you as an employee — no client needed.
+          This form is about you — no client needs to be selected.
         </div>
       )}
     </div>

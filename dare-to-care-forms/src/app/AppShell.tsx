@@ -11,6 +11,7 @@ interface NavItem {
   label: string;
   icon: string;
   external?: boolean;
+  courseHandoff?: boolean;
 }
 
 const navByRole: Record<Role, NavItem[]> = {
@@ -22,14 +23,14 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: "/admin/clients", label: "Clients", icon: "clients" },
     { to: "/admin/audit", label: "Audit log", icon: "clock" },
     { to: "/admin/certificates", label: "Certificates", icon: "file" },
-    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true },
   ],
   caregiver: [
     { to: "/caregiver", label: "My Day", icon: "home" },
     { to: "/caregiver/forms", label: "Available Forms", icon: "file" },
     { to: "/caregiver/records", label: "Records", icon: "inbox" },
     { to: "/caregiver/clients", label: "Clients", icon: "users" },
-    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true },
   ],
   officeManager: [
     { to: "/office-manager", label: "Dashboard", icon: "grid" },
@@ -37,7 +38,7 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: "/office-manager/clients", label: "Clients", icon: "clients" },
     { to: "/office-manager/team", label: "Team", icon: "users" },
     { to: "/office-manager/audit", label: "Audit log", icon: "clock" },
-    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true },
   ],
   newHire: [
     { to: "/new-hire", label: "Onboarding", icon: "home" },
@@ -255,6 +256,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const displayRole = (effectiveRole ?? user.role) as Role;
   const items = navByRole[displayRole] || [];
 
+  // Hand the logged-in user into the course site without a second sign-in.
+  // Open the tab synchronously (so it isn't popup-blocked), then redirect it to
+  // the course site with a one-time token the course site resolves to this user.
+  const openCourses = () => {
+    const base = "https://courses.daretocarehomecare.com";
+    const win = window.open("about:blank", "_blank");
+    Store.createCourseHandoff()
+      .then((token: string | null) => {
+        const dest = token ? `${base}/?h=${encodeURIComponent(token)}` : base;
+        if (win) win.location.href = dest;
+        else window.open(dest, "_blank");
+      })
+      .catch(() => {
+        if (win) win.location.href = base;
+        else window.open(base, "_blank");
+      });
+  };
+
   return (
     <div className="shell">
       <header className="shell-mobile-topbar">
@@ -300,6 +319,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               badge = badges.corrections;
             } else if (item.label === "Submissions") {
               badge = badges.pendingReview;
+            }
+
+            // Course site: hand the user off with a one-time token (no second login).
+            if (item.courseHandoff) {
+              return (
+                <button key={item.to} type="button" className="shell-nav-item" onClick={openCourses}>
+                  <NavIcon name={item.icon} />
+                  <span>{item.label}</span>
+                </button>
+              );
             }
 
             // External links (e.g. the course site on its own subdomain) open in a new tab.

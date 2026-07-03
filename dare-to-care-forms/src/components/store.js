@@ -397,12 +397,37 @@ export const DTCStore = {
     return { id, ...patch };
   },
 
-  // Certificates (populated by the course site; matched to a user by an admin)
+  // Certificates (written by the course site; auto-linked to a user by email)
   getCertificates() { return state.certificates.slice(); },
+
+  // Certificates that belong to a given user (matched by email or an explicit link).
+  certificatesForUser(user) {
+    if (!user) return [];
+    const email = (user.email || "").toLowerCase();
+    return state.certificates.filter(
+      (c) => (c.email && String(c.email).toLowerCase() === email) || c.linkedUserId === user.id
+    );
+  },
+
   async linkCertificate(certId, userId) {
     await updateDoc(doc(db, "certificates", certId), { linkedUserId: userId, linkedAt: new Date().toISOString() });
     await logAudit("certificate_linked", certId);
     await refresh();
+  },
+
+  // Create a one-time handoff token so the course site can identify the logged-in
+  // user without a second sign-in. No personal data goes in the URL — only this token.
+  async createCourseHandoff() {
+    const me = state.user;
+    if (!me) return null;
+    const token = `h_${me.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    await setDoc(doc(db, "courseHandoffs", token), {
+      uid: me.id,
+      name: me.name || "",
+      email: (me.email || "").toLowerCase(),
+      createdAt: new Date().toISOString(),
+    });
+    return token;
   },
 
   // Generic audit hook for callers outside the store (e.g. login events)

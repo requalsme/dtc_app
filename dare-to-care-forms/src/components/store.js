@@ -68,6 +68,20 @@ async function logAudit(action, target, detail) {
 const ROLE_LABELS_MAP = { admin: "Administrator", caregiver: "Caregiver", officeManager: "Office Manager", newHire: "New Hire", client: "Client" };
 function ROLE_LABEL(r) { return ROLE_LABELS_MAP[r] || r || ""; }
 
+// Legacy templates were stored with the schema nested under `schema` and no
+// top-level `sections`, which crashes the builder. Normalize them on load so
+// every consumer sees a flat template with `sections`.
+function normalizeTemplate(t) {
+  if (!t) return t;
+  if (Array.isArray(t.sections)) return t;
+  if (t.schema && Array.isArray(t.schema.sections)) {
+    const merged = { ...t.schema, ...t, sections: t.schema.sections };
+    merged.fieldCount = t.fieldCount ?? t.schema.sections.reduce((n, s) => n + ((s.fields || []).length), 0);
+    return merged;
+  }
+  return { ...t, sections: [] };
+}
+
 const referenceLibrary = [
   { id: "lib_fallRisk", file: "Fall_Risk_Assessment.pdf", pages: 1, schemaKey: "fallRisk" },
   { id: "lib_medList", file: "Medication_List.pdf", pages: 1, schemaKey: "medicationList" },
@@ -131,7 +145,7 @@ async function refresh() {
     requests.push(fetchCollection("certificates").catch(() => []));
 
     const [templates, clients, submissions, tasks, audit, users, certificates] = await Promise.all(requests);
-    state.templates = templates;
+    state.templates = (templates || []).map(normalizeTemplate);
     state.clients = clients;
     state.submissions = submissions;
     state.tasks = tasks;

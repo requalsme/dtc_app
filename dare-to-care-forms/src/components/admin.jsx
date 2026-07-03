@@ -3,6 +3,7 @@ import { Icon } from "./fields.jsx";
 import { AdminDashboard } from "../features/admin/AdminDashboard.tsx";
 import { DTCStore as Store } from "./store.js";
 import { fmtDate } from "../utils/format.ts";
+import { FormWizard } from "./forms/FormWizard";
 
 const relTime = (iso) => {
   if (!iso) return "—";
@@ -247,9 +248,15 @@ function Extracting({ lib, onDone }) {
 // ── Full Builder ─────────────────────────────────────────────────────────────
 
 function Builder({ templateKey, onClose, onToast }) {
-  const [template, setTemplate] = useState(() => JSON.parse(JSON.stringify(Store.getTemplate(templateKey))));
+  const [template, setTemplate] = useState(() => {
+    const t = Store.getTemplate(templateKey) || { key: templateKey, name: templateKey, status: "draft", sections: [] };
+    const copy = JSON.parse(JSON.stringify(t));
+    if (!Array.isArray(copy.sections)) copy.sections = [];
+    return copy;
+  });
   const [selected, setSelected] = useState(null);
   const [showPublishChecklist, setShowPublishChecklist] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   const selectedField = selected ? template.sections[selected.si]?.fields?.[selected.fi] : null;
 
@@ -404,6 +411,15 @@ function Builder({ templateKey, onClose, onToast }) {
         </div>
       )}
 
+      {previewing && (
+        <FormWizard
+          schemaOverride={template}
+          submitLabel="Close preview"
+          onClose={() => setPreviewing(false)}
+          onSubmit={() => setPreviewing(false)}
+        />
+      )}
+
       <div className="ds-ph">
         <div>
           <button className="dbtn dbtn-ghost" style={{ marginBottom: 10, padding: "6px 12px", fontSize: 12 }} onClick={onClose}>
@@ -416,6 +432,9 @@ function Builder({ templateKey, onClose, onToast }) {
           </p>
         </div>
         <div className="actions">
+          <button className="dbtn dbtn-ghost" onClick={() => setPreviewing(true)}>
+            <Icon n="eye" s={15} /> Preview
+          </button>
           <button className="dbtn dbtn-ghost" onClick={saveDraft}>Save draft</button>
           <button className="dbtn dbtn-primary" onClick={checkPublish}>
             <Icon n="check" s={15} /> {template.status === "published" ? "Re-publish" : "Publish"}

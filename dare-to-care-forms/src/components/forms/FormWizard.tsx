@@ -318,9 +318,18 @@ export function FormWizard({
   schemaKey, initialClient, onClose, onSubmit,
   autoApply, submitLabel = "Submit & file",
   isSubmitting = false, isResubmit = false,
-  prefillValues, correctionNote,
+  prefillValues, correctionNote, schemaOverride,
 }: any) {
-  const schema = getSchema(schemaKey);
+  // schemaOverride lets the template builder preview an in-progress (unsaved)
+  // template using the real renderer, so the preview matches the live form.
+  const schema = schemaOverride
+    ? {
+        estMin: schemaOverride.estMin ?? Math.max(2, Math.ceil(((schemaOverride.sections || []).reduce((n: number, s: any) => n + (s.fields || []).length, 0)) / 3)),
+        icon: schemaOverride.icon || "fileText",
+        ...schemaOverride,
+        sections: schemaOverride.sections || [],
+      }
+    : getSchema(schemaKey);
   const needsClient = schema.subject === "client";
 
   const [client, setClient] = useState(initialClient || null);

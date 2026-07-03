@@ -81,6 +81,15 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Persistent course progress per user (written by the course site, keyed by
+    // the user's app uid). Any signed-in session may read/write; the key is an
+    // unguessable uid. Not deletable.
+    match /courseProgress/{key} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -3,11 +3,14 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, type Role } from "./AuthContext";
 // @ts-ignore
 import { DTCStore as Store } from "../components/store";
-
+import { linkWithPhoneNumber, RecaptchaVerifier, type ConfirmationResult } from "firebase/auth";
+import { auth, db } from "../config/firebase";
+import { doc, updateDoc } from "firebase/firestore";
 interface NavItem {
   to: string;
   label: string;
   icon: string;
+  external?: boolean;
 }
 
 const navByRole: Record<Role, NavItem[]> = {
@@ -18,14 +21,15 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: "/admin/users", label: "Users", icon: "users" },
     { to: "/admin/clients", label: "Clients", icon: "clients" },
     { to: "/admin/audit", label: "Audit log", icon: "clock" },
-    { to: "/courses", label: "Training Courses", icon: "video" },
+    { to: "/admin/certificates", label: "Certificates", icon: "file" },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true },
   ],
   caregiver: [
     { to: "/caregiver", label: "My Day", icon: "home" },
     { to: "/caregiver/forms", label: "Available Forms", icon: "file" },
     { to: "/caregiver/records", label: "Records", icon: "inbox" },
     { to: "/caregiver/clients", label: "Clients", icon: "users" },
-    { to: "/courses", label: "Training Courses", icon: "video" },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true },
   ],
   officeManager: [
     { to: "/office-manager", label: "Dashboard", icon: "grid" },
@@ -33,16 +37,13 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: "/office-manager/clients", label: "Clients", icon: "clients" },
     { to: "/office-manager/team", label: "Team", icon: "users" },
     { to: "/office-manager/audit", label: "Audit log", icon: "clock" },
-    { to: "/courses", label: "Training Courses", icon: "video" },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true },
   ],
   newHire: [
     { to: "/new-hire", label: "Onboarding", icon: "home" },
-    { to: "/new-hire/training", label: "Training", icon: "layers" },
-    { to: "/new-hire/paperwork", label: "Paperwork", icon: "file" },
   ],
   client: [
     { to: "/client", label: "My Forms", icon: "file" },
-    { to: "/client/documents", label: "Documents", icon: "inbox" },
   ],
 };
 
@@ -179,6 +180,61 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
+  const [showLinkPhone, setShowLinkPhone] = useState(false);
+  const [phoneToLink, setPhoneToLink] = useState("");
+  const [linkCode, setLinkCode] = useState("");
+  const [linkConfirmation, setLinkConfirmation] = useState<ConfirmationResult | null>(null);
+  const [isLinking, setIsLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  const openLinkPhoneModal = () => {
+    setUserMenuOpen(false);
+    setShowLinkPhone(true);
+    setLinkError(null);
+    setLinkConfirmation(null);
+    setPhoneToLink("");
+    setLinkCode("");
+    setTimeout(() => {
+      if (!(window as any).recaptchaVerifierLink) {
+        (window as any).recaptchaVerifierLink = new RecaptchaVerifier(auth, 'recaptcha-link-container', {
+          size: 'invisible',
+        });
+      }
+    }, 100);
+  };
+
+  const handleSendLinkCode = async () => {
+    setIsLinking(true);
+    setLinkError(null);
+    try {
+      if (!auth.currentUser) throw new Error("Not logged in");
+      const appVerifier = (window as any).recaptchaVerifierLink;
+      const formattedPhone = phoneToLink.startsWith("+") ? phoneToLink : `+1${phoneToLink.replace(/\D/g, "")}`;
+      const result = await linkWithPhoneNumber(auth.currentUser, formattedPhone, appVerifier);
+      setLinkConfirmation(result);
+    } catch (err: any) {
+      setLinkError(err.message || "Failed to send code.");
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleVerifyLinkCode = async () => {
+    setIsLinking(true);
+    setLinkError(null);
+    try {
+      const result = await linkConfirmation!.confirm(linkCode);
+      // Success, update firestore
+      await updateDoc(doc(db, "users", result.user.uid), { phone: result.user.phoneNumber });
+      setShowLinkPhone(false);
+      alert("Phone number linked successfully! You can now log in using your phone number.");
+    } catch (err: any) {
+      setLinkError(err.message || "Invalid code.");
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
   useEffect(() => {
     const goOffline = () => setIsOffline(true);
     const goOnline = () => setIsOffline(false);
@@ -246,6 +302,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               badge = badges.pendingReview;
             }
 
+            // External links (e.g. the course site on its own subdomain) open in a new tab.
+            if (item.external) {
+              return (
+                <a key={item.to} href={item.to} target="_blank" rel="noreferrer" className="shell-nav-item">
+                  <NavIcon name={item.icon} />
+                  <span>{item.label}</span>
+                </a>
+              );
+            }
+
             return (
               <NavLink key={item.to} to={item.to} end={isRootPath} className={({ isActive }) => `shell-nav-item${active || isActive ? " active" : ""}`}>
                 <NavIcon name={item.icon} />
@@ -308,16 +374,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <NavIcon name="chevDown" />
           </div>
           {userMenuOpen ? (
-            <button
-              className="shell-logout"
-              onClick={async () => {
-                await logout();
-                navigate("/login", { replace: true });
-              }}
-            >
-              <NavIcon name="logout" />
-              Sign out
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <button
+                className="shell-logout"
+                style={{ borderBottom: '1px solid var(--border)', borderRadius: '8px 8px 0 0' }}
+                onClick={openLinkPhoneModal}
+              >
+                <NavIcon name="clock" />
+                Link Phone Number
+              </button>
+              <button
+                className="shell-logout"
+                style={{ borderRadius: '0 0 8px 8px' }}
+                onClick={async () => {
+                  await logout();
+                  navigate("/login", { replace: true });
+                }}
+              >
+                <NavIcon name="logout" />
+                Sign out
+              </button>
+            </div>
           ) : null}
         </div>
       </aside>
@@ -346,6 +423,60 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <span>Role-based access · Secure PDFs</span>
         </footer>
       </main>
+
+      {showLinkPhone && (
+        <div className="modal-overlay" onClick={() => !isLinking && setShowLinkPhone(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <h3 style={{ marginBottom: '1rem' }}>Link Phone Number</h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--slate-500)', marginBottom: '1.5rem' }}>
+              Link your phone number to sign in using SMS verification codes instead of a password.
+            </p>
+
+            {linkError && <div className="login-error" style={{ marginBottom: '1rem' }}>{linkError}</div>}
+
+            {!linkConfirmation ? (
+              <>
+                <label className="login-field">
+                  <span>Phone Number</span>
+                  <input 
+                    type="tel"
+                    placeholder="(555) 123-4567"
+                    value={phoneToLink}
+                    onChange={(e) => setPhoneToLink(e.target.value)}
+                    disabled={isLinking}
+                  />
+                </label>
+                <div id="recaptcha-link-container"></div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '1.5rem' }}>
+                  <button className="dbtn dbtn-secondary" onClick={() => setShowLinkPhone(false)}>Cancel</button>
+                  <button className="dbtn dbtn-primary" onClick={handleSendLinkCode} disabled={isLinking || !phoneToLink}>
+                    {isLinking ? "Sending..." : "Send Code"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <label className="login-field">
+                  <span>Verification Code</span>
+                  <input 
+                    type="text"
+                    placeholder="123456"
+                    value={linkCode}
+                    onChange={(e) => setLinkCode(e.target.value)}
+                    disabled={isLinking}
+                  />
+                </label>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '1.5rem' }}>
+                  <button className="dbtn dbtn-secondary" onClick={() => setShowLinkPhone(false)}>Cancel</button>
+                  <button className="dbtn dbtn-primary" onClick={handleVerifyLinkCode} disabled={isLinking || !linkCode}>
+                    {isLinking ? "Verifying..." : "Verify & Link"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

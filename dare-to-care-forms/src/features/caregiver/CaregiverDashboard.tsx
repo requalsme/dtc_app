@@ -341,7 +341,7 @@ function RecordsTab({ submissions, onOpen }: any) {
                     <span className="nm">{schema ? schema.name : sub.schemaKey}</span>
                     <span className="meta">
                       {sub.clientName ? `${sub.clientName} · ` : ""}
-                      {fmtDate(sub.submittedAt.slice(0, 10))}
+                      {sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}
                     </span>
                     {needsCorrection && sub.correctionNote && (
                       <span className="meta" style={{ color: "var(--amber)", fontSize: 11 }}>

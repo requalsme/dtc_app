@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../../app/AuthContext";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store";
+// @ts-ignore
+import { Icon } from "../../components/fields";
 import { VideoPlayer } from "../../components/ui/VideoPlayer";
+import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
+import { fmtDate } from "../../utils/format";
+
+// Real acknowledgement forms new hires must complete (verbatim schemas).
+const NEW_HIRE_FORM_KEYS = ["workplaceViolence", "emergencyPreparedness", "clientCarePlanReview"];
 
 const onboardingSteps = [
   {
@@ -83,6 +90,32 @@ export default function NewHirePortal() {
   const [completed, setCompleted] = useState<Set<string>>(new Set(["welcome"]));
   const [activeVideoStep, setActiveVideoStep] = useState<typeof onboardingSteps[number] | null>(null);
   const [marking, setMarking] = useState(false);
+  const [wizardKey, setWizardKey] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<any>(null);
+  const [formDone, setFormDone] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [myForms, setMyForms] = useState<any[]>([]);
+
+  useEffect(() => {
+    void Store.refresh().catch(() => {});
+    const update = () => {
+      const uid = user?.id;
+      setMyForms(Store.getSubmissions().filter((s: any) => s.caregiverId === uid));
+    };
+    update();
+    return Store.subscribe(update);
+  }, [user?.id]);
+
+  const submitForm = async ({ schema, values, score }: any) => {
+    setSubmitting(true);
+    try {
+      await Store.addSubmission({ schemaKey: schema.key, clientId: null, clientName: user?.name || null, values, score });
+      setWizardKey(null);
+      setFormDone(schema.name);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -168,7 +201,8 @@ export default function NewHirePortal() {
                   onClick={() => {
                     if (isDone) return;
                     if (step.training) { setActiveVideoStep(step); return; }
-                    markDone(step.id);
+                    // Persist non-video steps too, so progress survives a refresh.
+                    void completeTraining(step.id);
                   }}
                   disabled={isDone}
                 >
@@ -179,6 +213,49 @@ export default function NewHirePortal() {
           );
         })}
       </div>
+
+      {/* Required forms & acknowledgements */}
+      <div className="newhire-section-title">Required forms &amp; acknowledgements</div>
+      <div className="client-forms-grid">
+        {NEW_HIRE_FORM_KEYS.map((key) => {
+          const schema = getSchema(key);
+          if (!schema) return null;
+          const filed = myForms.some((s: any) => s.schemaKey === key);
+          return (
+            <button key={key} className="client-form-card" onClick={() => setWizardKey(key)}>
+              <div className="client-form-icon"><Icon n={schema.icon || "file"} s={22} /></div>
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <strong>{schema.name}</strong>
+                <span>{schema.description}</span>
+              </div>
+              {filed
+                ? <span className="stat ok" style={{ flexShrink: 0 }}>Filed ✓</span>
+                : <Icon n="chevron" s={16} style={{ color: "var(--ink-4)", flexShrink: 0 }} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {myForms.length > 0 && (
+        <>
+          <div className="newhire-section-title">Your submitted forms</div>
+          <div className="card" style={{ padding: "4px 16px" }}>
+            {myForms.map((sub: any) => {
+              const schema = getSchema(sub.schemaKey);
+              return (
+                <button className="subrow" key={sub.id} onClick={() => setViewing(sub)}>
+                  <span className="si"><Icon n={schema?.icon || "file"} s={18} /></span>
+                  <span className="sinfo">
+                    <span className="nm">{schema?.name || sub.schemaKey}</span>
+                    <span className="meta">{sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}</span>
+                  </span>
+                  <span className="stat">Filed</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {progressPct === 100 && (
         <div style={{
@@ -220,6 +297,30 @@ export default function NewHirePortal() {
           </div>
         </div>
       )}
+
+      {wizardKey && (
+        <FormWizard
+          schemaKey={wizardKey}
+          autoApply
+          onClose={() => setWizardKey(null)}
+          onSubmit={submitForm}
+          submitLabel={submitting ? "Filing..." : "Submit & file"}
+          isSubmitting={submitting}
+        />
+      )}
+
+      {formDone && (
+        <div className="done">
+          <div className="badge-ok"><Icon n="check" s={38} sw={2.6} /></div>
+          <h3>Form submitted</h3>
+          <p>{formDone} has been filed.</p>
+          <div className="acts">
+            <button className="btn btn-primary btn-block" onClick={() => setFormDone(null)}>Done</button>
+          </div>
+        </div>
+      )}
+
+      {viewing && <RecordViewer sub={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

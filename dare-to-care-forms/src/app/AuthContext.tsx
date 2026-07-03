@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
+// @ts-ignore - JS module without types
+import { setStoredSession, clearStoredSession } from "./auth-storage.js";
 
 export type Role = "admin" | "caregiver" | "officeManager" | "newHire" | "client";
 
@@ -11,6 +13,7 @@ export interface AppUser {
   initials: string;
   role: Role;
   email: string;
+  phone?: string;
   status: string;
   mustChangePassword?: boolean;
   createdAt?: string;
@@ -46,7 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data() as Omit<AppUser, "id">;
-            setUser({ ...data, id: firebaseUser.uid });
+            const appUser = { ...data, id: firebaseUser.uid };
+            setUser(appUser);
+            // Mirror the profile into local storage so non-React modules (schemas/store
+            // `DTC.currentUser`) can resolve the signed-in caregiver reliably.
+            setStoredSession({ user: appUser });
           } else {
             setUser(null);
           }
@@ -71,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = userDoc.data() as Omit<AppUser, "id">;
       const appUser = { ...data, id: userCredential.user.uid };
       setUser(appUser);
+      setStoredSession({ user: appUser });
       return appUser;
     } else {
       throw new Error("User profile not found in database.");
@@ -79,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await signOut(auth);
+    clearStoredSession();
     setPreviewRole(null);
     setUser(null);
   };

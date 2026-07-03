@@ -1,52 +1,50 @@
+import { useEffect, useState } from "react";
 import { useAuth } from "../../app/AuthContext";
+// @ts-ignore - JS module without types
+import { DTCStore as Store } from "../../components/store";
+// @ts-ignore - JS module without types
+import { Icon } from "../../components/fields";
+import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
+import { fmtDate } from "../../utils/format";
 
-const clientForms = [
-  {
-    id: "service_agreement",
-    title: "Service Agreement",
-    desc: "Review and sign your home care service agreement.",
-    icon: "doc",
-  },
-  {
-    id: "care_preferences",
-    title: "Care Preferences",
-    desc: "Tell us your daily preferences, routine, and any special requests.",
-    icon: "heart",
-  },
-  {
-    id: "emergency_contacts",
-    title: "Emergency Contacts",
-    desc: "Keep your emergency contacts and physician info up to date.",
-    icon: "phone",
-  },
-  {
-    id: "hipaa",
-    title: "HIPAA Authorization",
-    desc: "Authorize sharing of your health information with your care team.",
-    icon: "shield",
-  },
-  {
-    id: "satisfaction",
-    title: "Satisfaction Survey",
-    desc: "Share feedback about your recent care visits.",
-    icon: "star",
-  },
-];
-
-function FormIcon({ name }: { name: string }) {
-  const props = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, width: 22, height: 22 };
-  const icons: Record<string, React.ReactNode> = {
-    doc: <><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></>,
-    heart: <><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></>,
-    phone: <><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.63A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.91a16 16 0 006.18 6.18l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></>,
-    shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></>,
-    star: <><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></>,
-  };
-  return <svg {...props}>{icons[name] || icons.doc}</svg>;
-}
+// Client-facing forms. These render directly (no admin publish needed) so the
+// portal is always usable. More Admission Packet documents will be added here.
+const CLIENT_FORM_KEYS = ["clientCarePreferences", "clientEmergencyContacts", "clientSatisfaction"];
 
 export default function ClientPortal() {
   const { user } = useAuth();
+  const [wizardKey, setWizardKey] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<any>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissions, setSubmissions] = useState<any[]>([]);
+
+  useEffect(() => {
+    void Store.refresh().catch(() => {});
+    const update = () => {
+      const uid = user?.id;
+      setSubmissions(Store.getSubmissions().filter((s: any) => s.caregiverId === uid));
+    };
+    update();
+    return Store.subscribe(update);
+  }, [user?.id]);
+
+  const submit = async ({ schema, values, score }: any) => {
+    setSubmitting(true);
+    try {
+      await Store.addSubmission({
+        schemaKey: schema.key,
+        clientId: null,
+        clientName: user?.name || null,
+        values,
+        score,
+      });
+      setWizardKey(null);
+      setDone(schema.name);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="client-portal">
@@ -60,21 +58,45 @@ export default function ClientPortal() {
       {/* Forms */}
       <div className="newhire-section-title" style={{ marginTop: 0 }}>Your forms</div>
       <div className="client-forms-grid">
-        {clientForms.map((form) => (
-          <button key={form.id} className="client-form-card">
-            <div className="client-form-icon">
-              <FormIcon name={form.icon} />
-            </div>
-            <div style={{ flex: 1, textAlign: "left" }}>
-              <strong>{form.title}</strong>
-              <span>{form.desc}</span>
-            </div>
-            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" style={{ color: "var(--ink-4)", flexShrink: 0 }}>
-              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd"/>
-            </svg>
-          </button>
-        ))}
+        {CLIENT_FORM_KEYS.map((key) => {
+          const schema = getSchema(key);
+          if (!schema) return null;
+          return (
+            <button key={key} className="client-form-card" onClick={() => setWizardKey(key)}>
+              <div className="client-form-icon">
+                <Icon n={schema.icon || "file"} s={22} />
+              </div>
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <strong>{schema.name}</strong>
+                <span>{schema.description}</span>
+              </div>
+              <Icon n="chevron" s={16} style={{ color: "var(--ink-4)", flexShrink: 0 }} />
+            </button>
+          );
+        })}
       </div>
+
+      {/* Submitted records */}
+      {submissions.length > 0 && (
+        <>
+          <div className="newhire-section-title">Your submitted forms</div>
+          <div className="card" style={{ padding: "4px 16px" }}>
+            {submissions.map((sub: any) => {
+              const schema = getSchema(sub.schemaKey);
+              return (
+                <button className="subrow" key={sub.id} onClick={() => setViewing(sub)}>
+                  <span className="si"><Icon n={schema?.icon || "file"} s={18} /></span>
+                  <span className="sinfo">
+                    <span className="nm">{schema?.name || sub.schemaKey}</span>
+                    <span className="meta">{sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}</span>
+                  </span>
+                  <span className="stat">Filed</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Contact card */}
       <div className="client-contact-card">
@@ -90,6 +112,33 @@ export default function ClientPortal() {
           </span>
         </div>
       </div>
+
+      {/* Form wizard */}
+      {wizardKey && (
+        <FormWizard
+          schemaKey={wizardKey}
+          autoApply
+          onClose={() => setWizardKey(null)}
+          onSubmit={submit}
+          submitLabel={submitting ? "Filing..." : "Submit & file"}
+          isSubmitting={submitting}
+        />
+      )}
+
+      {/* Done confirmation */}
+      {done && (
+        <div className="done">
+          <div className="badge-ok"><Icon n="check" s={38} sw={2.6} /></div>
+          <h3>Form submitted</h3>
+          <p>{done} has been submitted to your care team.</p>
+          <div className="acts">
+            <button className="btn btn-primary btn-block" onClick={() => setDone(null)}>Done</button>
+          </div>
+        </div>
+      )}
+
+      {/* Record viewer (with Download PDF) */}
+      {viewing && <RecordViewer sub={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

@@ -1,9 +1,9 @@
-import { collection, doc, getDocs, setDoc, addDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDocs, setDoc, addDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "../config/firebase";
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 
-const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+const secondaryApp = getApps().find(a => a.name === "Secondary") ? getApp("Secondary") : initializeApp(firebaseConfig, "Secondary");
 const secondaryAuth = getAuth(secondaryApp);
 import { DTC } from "./schemas.js";
 
@@ -18,6 +18,16 @@ function getQueuedSubmissions() {
 
 
 
+function addToQueue(item) {
+  const queue = getQueuedSubmissions();
+  const localId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const entry = { ...item, id: localId, __localId: localId, queuedAt: new Date().toISOString() };
+  queue.push(entry);
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  emit();
+  return entry;
+}
+
 function removeFromQueue(id) {
   const queue = getQueuedSubmissions().filter((item) => item.id !== id);
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
@@ -30,7 +40,9 @@ async function syncQueue() {
   let synced = 0;
   for (const item of queue) {
     try {
-      const { id: _id, queuedAt: _q, status: _s, templateName: _tn, caregiverName: _cn, ...payload } = item;
+      // Strip only local bookkeeping fields; keep status/templateName/caregiver so the
+      // synced record is identical to an online submission.
+      const { id: _id, __localId: _lid, queuedAt: _q, ...payload } = item;
       await addDoc(collection(db, "submissions"), payload);
       removeFromQueue(item.id);
       synced++;
@@ -39,12 +51,31 @@ async function syncQueue() {
   if (synced > 0) await refresh();
 }
 
+// ─── Audit trail (best-effort; never blocks the user action) ────────────────
+async function logAudit(action, target, detail) {
+  try {
+    await addDoc(collection(db, "audit"), {
+      action,
+      target: target != null ? String(target) : "",
+      detail: detail != null ? String(detail) : "",
+      actor: state.user?.name || auth.currentUser?.email || "system",
+      role: state.user?.role || "unknown",
+      timestamp: new Date().toISOString(),
+    });
+  } catch { /* audit is best-effort */ }
+}
+
+const ROLE_LABELS_MAP = { admin: "Administrator", caregiver: "Caregiver", officeManager: "Office Manager", newHire: "New Hire", client: "Client" };
+function ROLE_LABEL(r) { return ROLE_LABELS_MAP[r] || r || ""; }
+
 const referenceLibrary = [
   { id: "lib_fallRisk", file: "Fall_Risk_Assessment.pdf", pages: 1, schemaKey: "fallRisk" },
   { id: "lib_medList", file: "Medication_List.pdf", pages: 1, schemaKey: "medicationList" },
   { id: "lib_wpv", file: "Workplace_Violence_Policy_Acknowledgement.pdf", pages: 1, schemaKey: "workplaceViolence" },
   { id: "lib_activity", file: "CaregiverActivityReport.pdf", pages: 1, schemaKey: "caregiverActivity" },
   { id: "lib_super", file: "Supervisory_Visit_Form.pdf", pages: 1, schemaKey: "supervisoryVisit" },
+  { id: "lib_ccpr", file: "Client_Care_Plan_Review.pdf", pages: 1, schemaKey: "clientCarePlanReview" },
+  { id: "lib_epp", file: "Emergency_Preparedness_Plan.pdf", pages: 1, schemaKey: "emergencyPreparedness" },
 ];
 
 const state = {
@@ -54,6 +85,7 @@ const state = {
   audit: [],
   users: [],
   tasks: [],
+  certificates: [],
   user: null, // Track current user manually from AuthContext if needed
 };
 
@@ -70,6 +102,7 @@ function clearState() {
   state.audit = [];
   state.users = [];
   state.tasks = [];
+  state.certificates = [];
   emit();
 }
 
@@ -94,15 +127,18 @@ async function refresh() {
     // In a real app with Firestore Rules, this would be restricted automatically.
     requests.push(fetchCollection("audit"));
     requests.push(fetchCollection("users"));
+    // Certificates are written by the course site; collection may be empty/absent.
+    requests.push(fetchCollection("certificates").catch(() => []));
 
-    const [templates, clients, submissions, tasks, audit, users] = await Promise.all(requests);
+    const [templates, clients, submissions, tasks, audit, users, certificates] = await Promise.all(requests);
     state.templates = templates;
     state.clients = clients;
     state.submissions = submissions;
     state.tasks = tasks;
     state.audit = audit;
     state.users = users;
-    
+    state.certificates = certificates || [];
+
     // Find current user profile
     state.user = users.find(u => u.id === user.uid) || null;
     emit();
@@ -157,26 +193,45 @@ export const DTCStore = {
   },
 
   async importTemplate(schemaKey) {
-    const template = { key: schemaKey, status: "draft", schema: DTC.schemas[schemaKey], name: DTC.schemas[schemaKey]?.name || schemaKey };
+    // Spread the full schema onto the stored template so top-level fields the UI
+    // reads (sections, category, version, icon, description, subject, completedBy)
+    // actually exist. Previously the schema was nested under `schema`, which left
+    // `template.sections` undefined and crashed the Builder.
+    const base = DTC.schemas[schemaKey] || {};
+    const fieldCount = (base.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
+    const template = {
+      ...base,
+      key: schemaKey,
+      status: "draft",
+      version: base.version || 1,
+      fieldCount,
+      updatedAt: new Date().toISOString(),
+    };
     await setDoc(doc(db, "templates", schemaKey), template);
+    await logAudit("template_imported", base.name || schemaKey);
     await refresh();
     return template;
   },
 
   async saveTemplate(template) {
-    await setDoc(doc(db, "templates", template.key), template);
+    const fieldCount = (template.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
+    const toSave = { ...template, fieldCount, updatedAt: new Date().toISOString() };
+    await setDoc(doc(db, "templates", template.key), toSave);
+    await logAudit("template_saved", template.name || template.key);
     await refresh();
-    return template;
+    return toSave;
   },
 
   async publishTemplate(key) {
-    await updateDoc(doc(db, "templates", key), { status: "published" });
+    await updateDoc(doc(db, "templates", key), { status: "published", updatedAt: new Date().toISOString() });
+    await logAudit("template_published", this.schemaName(key));
     await refresh();
     return { key, status: "published" };
   },
 
   async unpublishTemplate(key) {
-    await updateDoc(doc(db, "templates", key), { status: "draft" });
+    await updateDoc(doc(db, "templates", key), { status: "draft", updatedAt: new Date().toISOString() });
+    await logAudit("template_unpublished", this.schemaName(key));
     await refresh();
     return { key, status: "draft" };
   },
@@ -191,28 +246,84 @@ export const DTCStore = {
   getQueuedSubmissions,
 
   async addSubmission(submission) {
-    const docRef = await addDoc(collection(db, "submissions"), submission);
-    await refresh();
-    return { id: docRef.id, ...submission };
+    // Stamp the record with everything the review workflow depends on. These were
+    // missing before, which broke the caregiver Records tab and office review queue.
+    const me = state.user;
+    const enriched = {
+      ...submission,
+      status: "submitted",
+      submittedAt: submission.submittedAt || new Date().toISOString(),
+      caregiverId: submission.caregiverId ?? me?.id ?? null,
+      caregiverName: submission.caregiverName ?? me?.name ?? null,
+      templateName: submission.templateName ?? DTC.schemas[submission.schemaKey]?.name ?? submission.schemaKey,
+      correctionHistory: [],
+    };
+    // Offline-safe: queue locally if the network is down or the write fails.
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    if (offline) {
+      const entry = addToQueue(enriched);
+      return { ...entry, queued: true };
+    }
+    try {
+      const docRef = await addDoc(collection(db, "submissions"), enriched);
+      await logAudit("form_submitted", enriched.templateName, enriched.clientName || "");
+      await refresh();
+      return { id: docRef.id, ...enriched };
+    } catch (err) {
+      const entry = addToQueue(enriched);
+      return { ...entry, queued: true };
+    }
   },
 
   removeFromQueue,
   async syncQueue() { await syncQueue(); },
 
   async updateSubmission(id, patch) {
-    await updateDoc(doc(db, "submissions", id), { status: patch.status });
+    const actor = state.user;
+    const update = { ...patch };
+    if (patch.status === "reviewed") {
+      update.reviewedBy = actor?.name || "Office";
+      update.reviewedAt = new Date().toISOString();
+    }
+    await updateDoc(doc(db, "submissions", id), update);
+    await logAudit(patch.status === "reviewed" ? "form_reviewed" : "submission_updated", id);
     await refresh();
     return { id, ...patch };
   },
 
   async requestCorrection(id, note) {
-    await updateDoc(doc(db, "submissions", id), { status: "correction_needed", correctionNote: note });
+    const actor = state.user;
+    // Use the same status string the whole UI checks for ("needsCorrection"),
+    // and append to an audit trail on the record itself.
+    await updateDoc(doc(db, "submissions", id), {
+      status: "needsCorrection",
+      correctionNote: note,
+      correctionHistory: arrayUnion({
+        status: "needsCorrection",
+        note: note || "",
+        actorName: actor?.name || "Office",
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    await logAudit("correction_requested", id, note || "");
     await refresh();
-    return { id, status: "correction_needed" };
+    return { id, status: "needsCorrection" };
   },
 
   async resubmitSubmission(id, payload) {
-    await updateDoc(doc(db, "submissions", id), { ...payload, status: "submitted" });
+    const actor = state.user;
+    await updateDoc(doc(db, "submissions", id), {
+      ...payload,
+      status: "submitted",
+      submittedAt: new Date().toISOString(),
+      correctionNote: null,
+      correctionHistory: arrayUnion({
+        status: "submitted",
+        actorName: actor?.name || payload.caregiverName || "Caregiver",
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    await logAudit("form_resubmitted", id);
     await refresh();
     return { id, status: "submitted" };
   },
@@ -253,12 +364,14 @@ export const DTCStore = {
       lastLoginAt: null
     };
     await setDoc(doc(db, "users", userCred.user.uid), docData);
+    await logAudit("user_created", docData.name, ROLE_LABEL(rest.role));
     await refresh();
     return { id: userCred.user.uid, ...docData };
   },
 
   async updateUser(id, patch) {
     await updateDoc(doc(db, "users", id), patch);
+    await logAudit("user_updated", state.users.find((u) => u.id === id)?.name || id);
     await refresh();
     return { id, ...patch };
   },
@@ -269,16 +382,31 @@ export const DTCStore = {
 
   // Clients
   async createClient(clientInput) {
-    const docRef = await addDoc(collection(db, "clients"), clientInput);
+    const initials = (clientInput.name || "?").split(' ').map((s) => s[0]).join('').toUpperCase().slice(0, 2) || '?';
+    const data = { status: "active", initials, ...clientInput };
+    const docRef = await addDoc(collection(db, "clients"), data);
+    await logAudit("client_created", data.name);
     await refresh();
-    return { id: docRef.id, ...clientInput };
+    return { id: docRef.id, ...data };
   },
 
   async updateClient(id, patch) {
     await updateDoc(doc(db, "clients", id), patch);
+    await logAudit("client_updated", state.clients.find((c) => c.id === id)?.name || id);
     await refresh();
     return { id, ...patch };
   },
+
+  // Certificates (populated by the course site; matched to a user by an admin)
+  getCertificates() { return state.certificates.slice(); },
+  async linkCertificate(certId, userId) {
+    await updateDoc(doc(db, "certificates", certId), { linkedUserId: userId, linkedAt: new Date().toISOString() });
+    await logAudit("certificate_linked", certId);
+    await refresh();
+  },
+
+  // Generic audit hook for callers outside the store (e.g. login events)
+  async logEvent(action, target, detail) { await logAudit(action, target, detail); },
 
   async getClientAssignments(clientId) {
     const client = state.clients.find(c => c.id === clientId);

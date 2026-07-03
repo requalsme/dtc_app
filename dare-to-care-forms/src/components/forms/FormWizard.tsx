@@ -6,6 +6,7 @@ import { DTCStore as Store } from '../store';
 // @ts-ignore
 import { DTC as D } from '../schemas';
 import { fmtDate } from '../../utils/format';
+import { downloadElementAsPdf, safeFileName } from '../../utils/pdf';
 
 export const getSchema = (key: string) => {
   const template = Store.getTemplate(key);
@@ -42,6 +43,18 @@ function StatusBadge({ status }: { status: string }) {
 
 // ── PdfPreview — shown as the in-app document preview step ─────────────────
 export function PdfPreview({ schema, values, score, submission }: any) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+  const doDownload = async () => {
+    if (!sheetRef.current) return;
+    setDownloading(true);
+    try {
+      await downloadElementAsPdf(sheetRef.current, `${safeFileName(schema?.name || "form")}.pdf`);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (!schema || !schema.sections || schema.sections.length === 0) {
     return <div className="pdfsheet"><div className="pbody"><p>No form data to preview.</p></div></div>;
   }
@@ -52,7 +65,12 @@ export function PdfPreview({ schema, values, score, submission }: any) {
 
   return (
     <div>
-      <div className="pdfsheet">
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <button className="btn btn-ghost" onClick={doDownload} disabled={downloading}>
+          <Icon n="download" s={15} /> {downloading ? "Preparing PDF…" : "Download PDF"}
+        </button>
+      </div>
+      <div className="pdfsheet" ref={sheetRef}>
         <div className="ph">
           <img src="/logo.png" alt="" />
           <div>
@@ -64,13 +82,22 @@ export function PdfPreview({ schema, values, score, submission }: any) {
         <div className="pbody">
           {/* All sections */}
           {schema.sections.map((sec: any) => {
-            const visible = sec.fields.filter((f: any) => f.type !== "computed" && f.type !== "policyText");
+            // Keep policyText so the full acknowledgement/policy body prints in the document.
+            const visible = sec.fields.filter((f: any) => f.type !== "computed");
             if (!visible.length) return null;
             return (
               <div key={sec.id}>
                 <h6>{sec.title}</h6>
                 {visible.map((f: any) => {
                   const val = values[f.id];
+                  if (f.type === "policyText") {
+                    return (
+                      <div key={f.id} style={{ margin: "4px 0 12px" }}>
+                        {f.label ? <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>{f.label}</div> : null}
+                        <div style={{ fontSize: 11.5, lineHeight: 1.55, color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>{f.body}</div>
+                      </div>
+                    );
+                  }
                   if (f.type === "table") {
                     const rows = Array.isArray(val) ? val.filter((r: any) => Object.values(r || {}).some((x) => x)) : [];
                     if (rows.length === 0) return null;
@@ -147,7 +174,7 @@ export function PdfPreview({ schema, values, score, submission }: any) {
         </div>
       </div>
       <p style={{ fontSize: 11, color: "var(--ink-3)", textAlign: "center", marginTop: 14, lineHeight: 1.5 }}>
-        A full professional PDF document with all sections, signature image, and branding is generated server-side on submission.
+        Use “Download PDF” above to save the complete document — all policy text, your entries, and the signature — as a branded PDF.
       </p>
     </div>
   );

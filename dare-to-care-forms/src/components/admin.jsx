@@ -724,39 +724,6 @@ function UsersPage({ onToast }) {
         </div>
       )}
 
-      {/* Reveal password modal */}
-      {revealedPassword && (
-        <div className="modal-overlay" onClick={() => setRevealedPassword(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <div className="modal-head">
-              <h3>Temp password — {revealedPassword.user.name}</h3>
-              <button className="modal-close" onClick={() => setRevealedPassword(null)}><Icon n="x" s={16} /></button>
-            </div>
-            <div className="modal-body">
-              {revealedPassword.data.tempPassword ? (
-                <div style={{ background: "rgba(47,138,104,0.07)", border: "1px solid rgba(47,138,104,0.2)", borderRadius: 14, padding: "16px 18px" }}>
-                  <div style={{ fontSize: 11, fontWeight: 750, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--ink-3)", marginBottom: 8 }}>Current temp password</div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 18, fontWeight: 700, color: "var(--accent-deep)" }}>{revealedPassword.data.tempPassword}</div>
-                  <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--ink-3)" }}>{revealedPassword.data.note}</div>
-                </div>
-              ) : (
-                <div style={{ padding: "18px 0", textAlign: "center", color: "var(--ink-3)" }}>
-                  <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
-                  <strong style={{ display: "block", marginBottom: 6, color: "var(--ink-2)" }}>Password not visible</strong>
-                  <span style={{ fontSize: 13 }}>{revealedPassword.data.note}</span>
-                </div>
-              )}
-            </div>
-            <div className="modal-foot">
-              {revealedPassword.data.tempPassword && (
-                <button className="dbtn dbtn-primary" onClick={() => { navigator.clipboard?.writeText(revealedPassword.data.tempPassword); onToast("Copied!"); }}>Copy</button>
-              )}
-              <button className="dbtn dbtn-ghost" onClick={() => setRevealedPassword(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Edit user modal */}
       {editUser && (
         <div className="modal-overlay" onClick={() => setEditUser(null)}>
@@ -898,7 +865,7 @@ function UsersPage({ onToast }) {
                 {loadingPwd ? "Generating…" : "⚡ Generate secure password"}
               </button>
             </div>
-            <button className="dbtn dbtn-primary" onClick={doCreate} disabled={!form.name || !form.username || !form.password}>
+            <button className="dbtn dbtn-primary" onClick={doCreate} disabled={!form.name || !form.email || !form.password}>
               <Icon n="plus" s={14} /> Create account
             </button>
           </div>
@@ -926,7 +893,7 @@ function UsersPage({ onToast }) {
                 <div className="admin-user-avatar" style={{ opacity: user.status !== "active" ? 0.4 : 1, background: `linear-gradient(135deg, ${ROLE_COLORS[user.role] || "var(--accent)"}, ${ROLE_COLORS[user.role] || "var(--accent)"}88)` }}>{user.initials}</div>
                 <div className="admin-user-copy">
                   <strong>{user.name}</strong>
-                  <span>@{user.username}</span>
+                  <span>{user.email}</span>
                   {user.mustChangePassword && <span style={{ fontSize: 10, color: "var(--warn)", fontWeight: 700 }}>Temp password</span>}
                   {user.lastLoginAt && !user.mustChangePassword && <span style={{ fontSize: 10, color: "var(--ink-4)" }}>Last login {relTime(user.lastLoginAt)}</span>}
                 </div>
@@ -935,11 +902,6 @@ function UsersPage({ onToast }) {
                 </span>
                 {user.status !== "active" && <span className="spill warn" style={{ fontSize: 10 }}>Inactive</span>}
                 <div style={{ display: "flex", gap: 4 }}>
-                  {user.mustChangePassword && (
-                    <button className="dbtn dbtn-ghost" style={{ padding: "4px 8px", fontSize: 10 }} onClick={() => revealPassword(user)} title="View temp password">
-                      🔑
-                    </button>
-                  )}
                   <button className="dbtn dbtn-ghost" style={{ padding: "4px 9px", fontSize: 11 }} onClick={() => setEditUser({ ...user })}>Edit</button>
                 </div>
               </div>
@@ -1214,6 +1176,70 @@ function AuditLog() {
   );
 }
 
+// ── Certificates (from the training site) ───────────────────────────────────
+
+function Certificates({ onToast }) {
+  const [, force] = useState(0);
+  useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
+  const certs = Store.getCertificates ? Store.getCertificates() : [];
+  const users = Store.getUsers();
+
+  const linkTo = async (certId, userId) => {
+    if (!userId) return;
+    try {
+      await Store.linkCertificate(certId, userId);
+      onToast("Certificate matched to user");
+    } catch (err) {
+      onToast(err.message || "Could not match certificate");
+    }
+  };
+
+  return (
+    <div>
+      <div className="ds-ph">
+        <div>
+          <h1>Certificates</h1>
+          <p>Training completions from courses.daretocarehomecare.com. Match each certificate to the right team member.</p>
+        </div>
+      </div>
+      <div className="ds-panel">
+        <table className="ds-table">
+          <thead>
+            <tr><th>Learner</th><th>Course</th><th>Score</th><th>Completed</th><th>Matched to</th></tr>
+          </thead>
+          <tbody>
+            {certs.map((c) => {
+              const linked = users.find((u) => u.id === c.linkedUserId);
+              return (
+                <tr key={c.id}>
+                  <td>
+                    <span className="cell-main">{c.name || c.learnerName || "—"}</span>
+                    {c.dob ? <span className="cell-sub">DOB {fmtDate(c.dob)}</span> : null}
+                  </td>
+                  <td>{c.courseTitle || c.course || c.title || "—"}</td>
+                  <td>{c.score != null ? `${c.score}%` : "—"}</td>
+                  <td style={{ color: "var(--ink-3)", fontSize: 12 }}>{c.date ? fmtDate(String(c.date).slice(0, 10)) : "—"}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {linked ? (
+                      <span className="spill pub"><span className="pip" />{linked.name}</span>
+                    ) : (
+                      <select className="ds-select" defaultValue="" onChange={(e) => linkTo(c.id, e.target.value)}>
+                        <option value="">Match to user…</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({ROLE_LABELS[u.role] || u.role})</option>)}
+                      </select>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {certs.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", padding: 28, color: "var(--ink-3)" }}>No certificates yet. Completions from the training site will appear here once the integration is live.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── AdminApp ───────────────────────────────────────────────────────────────
 
 function AdminApp({ page, onNav, onToast }) {
@@ -1251,6 +1277,7 @@ function AdminApp({ page, onNav, onToast }) {
     case "users": return <UsersPage onToast={onToast} />;
     case "clients": return <ClientsPage onToast={onToast} />;
     case "audit": return <AuditLog />;
+    case "certificates": return <Certificates onToast={onToast} />;
     default: return <AdminDashboard />;
   }
 }

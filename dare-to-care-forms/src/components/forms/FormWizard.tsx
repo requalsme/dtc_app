@@ -274,7 +274,7 @@ function SectionStep({ section, values, setField, ctx, invalidIds, score, schema
 
 // ── WizardIntro ────────────────────────────────────────────────────────────
 
-function WizardIntro({ schema, needsClient, client, setClient }: any) {
+function WizardIntro({ schema, needsClient, client, setClient, isPreview }: any) {
   return (
     <div>
       <div className="wizintro">
@@ -287,7 +287,11 @@ function WizardIntro({ schema, needsClient, client, setClient }: any) {
           <div className="f"><b>{schema.category}</b>record</div>
         </div>
       </div>
-      {needsClient ? (
+      {isPreview && needsClient ? (
+        <div className="card" style={{ background: "var(--surface-3)", textAlign: "center", fontSize: 13, color: "var(--ink-2)" }}>
+          Preview mode — using a placeholder client so you can see the full form. Real submissions will require selecting an actual client.
+        </div>
+      ) : needsClient ? (
         <div>
           <div className="section-label" style={{ marginTop: 6 }}>Select client</div>
           {Store.clients.map((c: any) => (
@@ -331,8 +335,10 @@ export function FormWizard({
       }
     : getSchema(schemaKey);
   const needsClient = schema.subject === "client";
+  const isPreview = !!schemaOverride;
+  const previewClient = { id: "__preview__", name: "Preview Client", initials: "PC", dob: null, mrn: "PREVIEW", allergies: null };
 
-  const [client, setClient] = useState(initialClient || null);
+  const [client, setClient] = useState(initialClient || (isPreview && needsClient ? previewClient : null));
   const [values, setValues] = useState<any>(prefillValues || {});
   const [step, setStep] = useState(0);
   const [tried, setTried] = useState(false);
@@ -418,7 +424,7 @@ export function FormWizard({
 
       <div className="wiz-body" ref={bodyRef}>
         {step === 0 ? (
-          <WizardIntro schema={schema} needsClient={needsClient} client={client} setClient={setClient} />
+          <WizardIntro schema={schema} needsClient={needsClient} client={client} setClient={setClient} isPreview={isPreview} />
         ) : step <= nSec ? (
           <SectionStep
             section={schema.sections[step - 1]} values={values} setField={setField} ctx={ctx}

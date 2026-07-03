@@ -1,17 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../app/AuthContext";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store";
 // @ts-ignore
 import { Icon } from "../../components/fields";
-import { VideoPlayer } from "../../components/ui/VideoPlayer";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate } from "../../utils/format";
 
 // Real acknowledgement forms new hires must complete (verbatim schemas).
 const NEW_HIRE_FORM_KEYS = ["workplaceViolence", "emergencyPreparedness", "clientCarePlanReview"];
 
-const onboardingSteps = [
+// These ids/titles must match window.DTC_COURSES in the dtccourses repo exactly —
+// they're how a completed course certificate gets matched back to a checklist step.
+const TRAINING_MODULES = [
+  { id: "emergency", title: "Emergency Preparedness & Disaster Planning", desc: "Proactive plans, risk assessment, supplies, and communication to keep clients safe during unexpected events.", minutes: 4 },
+  { id: "home-safety", title: "Home Safety", desc: "Prevent accidents and create a secure environment — hazards, bathroom and kitchen safety, and medication management.", minutes: 3 },
+  { id: "abuse", title: "Abuse & Neglect Prevention", desc: "Identify high-risk situations, recognize warning signs, and protect clients from abuse, neglect, and exploitation.", minutes: 3 },
+  { id: "first-aid", title: "Basic First Aid", desc: "Handle common emergencies — cuts, burns, choking, bleeding — and know when to call for professional help.", minutes: 4 },
+  { id: "infection", title: "Infection Control & Universal Precautions", desc: "Standard precautions for every client — hand hygiene, PPE, sharps safety, and proper cleaning and disinfection.", minutes: 6 },
+  { id: "rights", title: "Consumer Rights & Behavior Management", desc: "Uphold client rights and ethical behavior management — privacy, informed consent, choice, dignity, and respect.", minutes: 5 },
+];
+
+type OnboardingStep = {
+  id: string;
+  title: string;
+  desc: string;
+  duration: string;
+  training?: boolean;
+  requiresForms?: boolean;
+};
+
+const onboardingSteps: OnboardingStep[] = [
   {
     id: "welcome",
     title: "Welcome orientation",
@@ -21,45 +40,17 @@ const onboardingSteps = [
   {
     id: "paperwork",
     title: "Complete your paperwork",
-    desc: "Fill out your W-4, direct deposit form, emergency contacts, and signed policies.",
+    desc: "File your required new-hire forms and policy acknowledgements below.",
     duration: "30 min",
-    formKey: "new_hire_paperwork",
+    requiresForms: true,
   },
-  {
-    id: "emergency",
-    title: "Emergency Preparedness & Disaster Planning",
-    desc: "Required training: learn protocols for emergencies in home care settings.",
-    duration: "45 min",
+  ...TRAINING_MODULES.map((m) => ({
+    id: m.id,
+    title: m.title,
+    desc: m.desc,
+    duration: `${m.minutes} min video + quiz`,
     training: true,
-  },
-  {
-    id: "home_safety",
-    title: "Home Safety",
-    desc: "Identify and mitigate hazards in client homes to keep clients and yourself safe.",
-    duration: "30 min",
-    training: true,
-  },
-  {
-    id: "first_aid",
-    title: "First Aid & Basic Life Safety",
-    desc: "Understand first aid principles and when to call emergency services.",
-    duration: "60 min",
-    training: true,
-  },
-  {
-    id: "infection",
-    title: "Infection Control",
-    desc: "Best practices for preventing the spread of illness in home care environments.",
-    duration: "30 min",
-    training: true,
-  },
-  {
-    id: "consumer_rights",
-    title: "Consumer Rights & Responsibilities",
-    desc: "Understand client rights and how to uphold dignity, privacy, and autonomy.",
-    duration: "20 min",
-    training: true,
-  },
+  })),
   {
     id: "shadow",
     title: "Shadow a senior caregiver",
@@ -87,15 +78,13 @@ function LockIcon() {
 
 export default function NewHirePortal() {
   const { user } = useAuth();
-  const [completed, setCompleted] = useState<Set<string>>(new Set(["welcome"]));
-  const [activeVideoStep, setActiveVideoStep] = useState<typeof onboardingSteps[number] | null>(null);
-  const [marking, setMarking] = useState(false);
   const [wizardKey, setWizardKey] = useState<string | null>(null);
   const [viewing, setViewing] = useState<any>(null);
   const [formDone, setFormDone] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [myForms, setMyForms] = useState<any[]>([]);
   const [myCerts, setMyCerts] = useState<any[]>([]);
+  const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
     void Store.refresh().catch(() => {});
@@ -119,35 +108,40 @@ export default function NewHirePortal() {
     }
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    Store.getMyTrainingProgress()
-      .then((progress: Record<string, string>) => {
-        if (cancelled) return;
-        setCompleted((prev) => new Set([...prev, ...Object.keys(progress)]));
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  // A training step is done only when a real certificate exists from the course
+  // site — no separate in-app "mark complete," so onboarding always reflects
+  // what the person actually finished on courses.daretocarehomecare.com.
+  const passedCourseIds = useMemo(() => new Set(myCerts.map((c: any) => c.courseId)), [myCerts]);
+  const filedFormKeys = useMemo(() => new Set(myForms.map((f: any) => f.schemaKey)), [myForms]);
+  const paperworkDone = NEW_HIRE_FORM_KEYS.every((k) => filedFormKeys.has(k));
 
-  const totalSteps = onboardingSteps.length;
-  const completedCount = completed.size;
-  const progressPct = Math.round((completedCount / totalSteps) * 100);
-
-  const markDone = (id: string) => {
-    setCompleted((prev) => new Set([...prev, id]));
+  const isStepDone = (step: any) => {
+    if (step.id === "welcome") return true; // orientation is informational; nothing to file
+    if (step.training) return passedCourseIds.has(step.id);
+    if (step.requiresForms) return paperworkDone;
+    return false; // "shadow" is signed off by an admin/office manager, not self-reported
   };
 
-  const completeTraining = async (moduleId: string) => {
-    setMarking(true);
+  const totalSteps = onboardingSteps.length;
+  const completedCount = onboardingSteps.filter(isStepDone).length;
+  const progressPct = Math.round((completedCount / totalSteps) * 100);
+
+  // Open the course site as the same signed-in profile (no second login), deep
+  // linked to the specific module so the training step and the course site stay
+  // in sync — completion flows back automatically as a certificate.
+  const openCourseModule = async (courseId: string) => {
+    setOpening(courseId);
+    const win = window.open("about:blank", "_blank");
     try {
-      await Store.completeTrainingModule(moduleId);
-      markDone(moduleId);
-      setActiveVideoStep(null);
-    } catch {
-      // leave the modal open so the new hire can retry
+      const token = await Store.createCourseHandoff();
+      const params = new URLSearchParams();
+      if (token) params.set("h", token);
+      params.set("course", courseId);
+      const dest = `https://courses.daretocarehomecare.com?${params.toString()}`;
+      if (win) win.location.href = dest;
+      else window.open(dest, "_blank");
     } finally {
-      setMarking(false);
+      setOpening(null);
     }
   };
 
@@ -177,8 +171,10 @@ export default function NewHirePortal() {
       <div className="newhire-section-title">Onboarding checklist</div>
       <div className="newhire-steps">
         {onboardingSteps.map((step, idx) => {
-          const isDone = completed.has(step.id);
-          const isLocked = !isDone && idx > 0 && !completed.has(onboardingSteps[idx - 1].id);
+          const isDone = isStepDone(step);
+          // Training modules can be taken in any order (same as the course site);
+          // only "shadow" waits on everything else being real.
+          const isLocked = !isDone && step.id === "shadow" && !onboardingSteps.filter((s) => s.id !== "shadow").every(isStepDone);
 
           return (
             <div
@@ -197,19 +193,27 @@ export default function NewHirePortal() {
                   </span>
                 )}
               </div>
-              {!isLocked && (
+              {!isLocked && step.id !== "shadow" && (
                 <button
                   className={`newhire-step-action ${isDone ? "is-done" : ""}`}
                   onClick={() => {
                     if (isDone) return;
-                    if (step.training) { setActiveVideoStep(step); return; }
-                    // Persist non-video steps too, so progress survives a refresh.
-                    void completeTraining(step.id);
+                    if (step.training) { void openCourseModule(step.id); return; }
+                    if (step.requiresForms) {
+                      const nextKey = NEW_HIRE_FORM_KEYS.find((k) => !filedFormKeys.has(k));
+                      if (nextKey) setWizardKey(nextKey);
+                      return;
+                    }
                   }}
-                  disabled={isDone}
+                  disabled={isDone || opening === step.id}
                 >
-                  {isDone ? "Done ✓" : step.training ? "Start" : step.formKey ? "Fill out" : "Begin"}
+                  {isDone ? "Done ✓" : opening === step.id ? "Opening…" : step.training ? "Start on courses site" : step.requiresForms ? "Fill out" : "Begin"}
                 </button>
+              )}
+              {step.id === "shadow" && (
+                <span style={{ fontSize: 11.5, color: "var(--ink-3)", flexShrink: 0, textAlign: "right", maxWidth: 120 }}>
+                  {isDone ? "Confirmed ✓" : isLocked ? "Unlocks after training" : "Signed off by your office manager"}
+                </span>
               )}
             </div>
           );
@@ -294,30 +298,6 @@ export default function NewHirePortal() {
           <span style={{ color: "var(--ink-3)", fontSize: 13 }}>
             Your administrator will review your progress and upgrade your account to full caregiver access.
           </span>
-        </div>
-      )}
-
-      {activeVideoStep && (
-        <div className="modal-overlay" onClick={() => setActiveVideoStep(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
-            <div className="modal-head">
-              <h3>{activeVideoStep.title}</h3>
-              <button className="modal-close" onClick={() => setActiveVideoStep(null)}>×</button>
-            </div>
-            <div className="modal-body">
-              <VideoPlayer 
-                key={activeVideoStep.id} 
-                storagePath={`courses/${activeVideoStep.id}.mp4`} 
-                onEnded={() => completeTraining(activeVideoStep.id)} 
-              />
-            </div>
-            <div className="modal-foot">
-              <button className="dbtn dbtn-ghost" onClick={() => setActiveVideoStep(null)} disabled={marking}>Close</button>
-              <button className="dbtn dbtn-primary" onClick={() => completeTraining(activeVideoStep.id)} disabled={marking}>
-                {marking ? "Saving…" : "Mark as complete"}
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

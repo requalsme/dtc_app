@@ -54,7 +54,8 @@ function FormCard({ schemaKey, onStart }: { schemaKey: string; onStart: () => vo
 
 function TodayTab({ tasks, onStartTask, submissions }: any) {
   const currentUser = Store.currentUser;
-  const clients = Store.clients;
+  const clients = Store.clients; // full list for lookups by id
+  const activeClients = Store.activeClients;
 
   // Filter to pending/late tasks for this caregiver's day
   const dueTasks = tasks.filter((t: any) =>
@@ -84,7 +85,7 @@ function TodayTab({ tasks, onStartTask, submissions }: any) {
             <div className="l">Due today</div>
           </div>
           <div className="statbox">
-            <div className="n">{clients.length}</div>
+            <div className="n">{activeClients.length}</div>
             <div className="l">My clients</div>
           </div>
           <div className="statbox">
@@ -369,15 +370,15 @@ function ClientsTab() {
     <div className="view">
       <div className="appbar">
         <div className="title-row"><h2>My clients</h2></div>
-        <div className="datestrip"><span className="dot" />{Store.clients.length} assigned clients</div>
+        <div className="datestrip"><span className="dot" />{Store.activeClients.length} active clients</div>
       </div>
       <div className="pad" style={{ paddingTop: 4 }}>
-        {Store.clients.length === 0 ? (
+        {Store.activeClients.length === 0 ? (
           <div className="card" style={{ padding: 24, textAlign: "center" }}>
             <p style={{ color: "var(--ink-3)", fontSize: 13 }}>No clients have been assigned to you yet.</p>
           </div>
         ) : (
-          Store.clients.map((client: any) => (
+          Store.activeClients.map((client: any) => (
             <div className="card" key={client.id} style={{ marginTop: 10 }}>
               <div className="clientcard">
                 <span className="ci">{client.initials}</span>

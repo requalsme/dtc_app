@@ -127,7 +127,7 @@ export function PdfPreview({ schema, values, score, submission }: any) {
           })}
 
           {/* Score */}
-          {D.hasScoring(schema) && score.tier ? (
+          {D.hasScoring(schema) && score?.tier ? (
             <>
               <h6>Assessment result</h6>
               <div className="pdf-score">
@@ -183,10 +183,10 @@ export function PdfPreview({ schema, values, score, submission }: any) {
 // ── ScoreBlock ────────────────────────────────────────────────────────────
 
 export function ScoreBlock({ score }: any) {
-  if (!score.tier) {
+  if (!score?.tier) {
     return (
       <div className="scoreblock">
-        <div className="top"><span className="lbl">Total score</span><span className="big">{score.total}</span></div>
+        <div className="top"><span className="lbl">Total score</span><span className="big">{score?.total ?? 0}</span></div>
       </div>
     );
   }
@@ -294,7 +294,7 @@ function WizardIntro({ schema, needsClient, client, setClient, isPreview }: any)
       ) : needsClient ? (
         <div>
           <div className="section-label" style={{ marginTop: 6 }}>Select client</div>
-          {Store.clients.map((c: any) => (
+          {Store.activeClients.map((c: any) => (
             <button key={c.id} className={"clientopt" + (client && client.id === c.id ? " sel" : "")} onClick={() => setClient(c)}>
               <span className="ci">{c.initials}</span>
               <span className="cinfo">

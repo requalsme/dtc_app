@@ -1,5 +1,6 @@
 import { collection, doc, getDocs, setDoc, addDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "../config/firebase";
+import { getStoredToken } from "../app/auth-storage.js";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 
@@ -180,6 +181,8 @@ export const DTCStore = {
 
   get currentUser() { return state.user; },
   get clients() { return state.clients; },
+  // Archived clients stay in the directory but leave caregiver-facing lists.
+  get activeClients() { return state.clients.filter((c) => c.status !== "inactive"); },
   get users() { return state.users.slice(); },
 
   async refresh() { await refresh(); },

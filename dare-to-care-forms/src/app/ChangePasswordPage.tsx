@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
@@ -7,13 +7,17 @@ export default function ChangePasswordPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  if (!user || !user.mustChangePassword) {
-    navigate('/');
-    return null;
-  }
+  // Wait for the auth profile to load before deciding — otherwise a page
+  // refresh here bounces the user away even though they still must change
+  // their password.
+  useEffect(() => {
+    if (!isLoading && (!user || !user.mustChangePassword)) navigate('/', { replace: true });
+  }, [isLoading, user, navigate]);
+
+  if (isLoading || !user || !user.mustChangePassword) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

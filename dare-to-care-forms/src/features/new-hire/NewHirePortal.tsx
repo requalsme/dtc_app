@@ -84,6 +84,7 @@ export default function NewHirePortal() {
   const [submitting, setSubmitting] = useState(false);
   const [myForms, setMyForms] = useState<any[]>([]);
   const [myCerts, setMyCerts] = useState<any[]>([]);
+  const [myRecord, setMyRecord] = useState<any>(null);
   const [opening, setOpening] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,6 +93,7 @@ export default function NewHirePortal() {
       const uid = user?.id;
       setMyForms(Store.getSubmissions().filter((s: any) => s.caregiverId === uid));
       setMyCerts(Store.certificatesForUser ? Store.certificatesForUser(user) : []);
+      setMyRecord(Store.getUsers().find((u: any) => u.id === uid) || null);
     };
     update();
     return Store.subscribe(update);
@@ -119,7 +121,9 @@ export default function NewHirePortal() {
     if (step.id === "welcome") return true; // orientation is informational; nothing to file
     if (step.training) return passedCourseIds.has(step.id);
     if (step.requiresForms) return paperworkDone;
-    return false; // "shadow" is signed off by an admin/office manager, not self-reported
+    // "shadow" is signed off by an admin (Users page toggle), not self-reported
+    if (step.id === "shadow") return Boolean(myRecord?.shadowCompletedAt);
+    return false;
   };
 
   const totalSteps = onboardingSteps.length;

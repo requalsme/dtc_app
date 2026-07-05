@@ -76,12 +76,13 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
     ? Store.getPublishedTemplates().filter((t: any) => t.completedBy?.includes("officeManager"))
     : [];
   const caregivers = Store.getUsers().filter((u: any) => u.role === "caregiver");
-  const clients = Store.clients;
+  const clients = Store.activeClients;
 
   const createTaskAndOpen = async () => {
     const client = clientId ? clients.find((c: any) => c.id === clientId) : null;
     const caregiver = assignedToId ? caregivers.find((u: any) => u.id === assignedToId) : null;
     const schema = getSchema(schemaKey);
+    const me = Store.currentUser;
 
     await Store.createTask({
       title: `${schema?.name || schemaKey}${client ? ` — ${client.name}` : ""}`,
@@ -89,12 +90,20 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
       schemaKey,
       clientId: clientId || null,
       clientName: client?.name || null,
-      assignedToId: assignedToId || "u_om",
-      assignedToName: caregiver?.name || "Office Manager",
+      assignedToId: assignedToId || me?.id || null,
+      assignedToName: caregiver?.name || me?.name || "Office Manager",
       dueDate,
       priority,
+      status: "pending",
+      createdAt: new Date().toISOString(),
     });
 
+    if (assignedToId) {
+      // Assigned to a caregiver — it lands on their "My Day" list; nothing to fill out here.
+      onToast(`Task assigned to ${caregiver?.name || "caregiver"}`);
+      onClose();
+      return;
+    }
     onToast("Task created");
     setStartingWizard(true);
   };

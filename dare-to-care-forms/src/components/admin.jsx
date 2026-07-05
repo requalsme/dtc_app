@@ -58,7 +58,7 @@ function Templates({ onEdit, onNav, onToast }) {
             </div>
             <div className="modal-body">
               {versions.length === 0 ? (
-                <p style={{ color: "var(--ink-3)", fontSize: 13 }}>No version snapshots yet. Snapshots are created automatically each time a template is saved while published.</p>
+                <p style={{ color: "var(--ink-3)", fontSize: 13 }}>No version snapshots for this template. The current live version is shown in the Templates list.</p>
               ) : (
                 versions.map((v) => (
                   <div key={v.id} className="history-row">
@@ -208,9 +208,9 @@ function Upload({ onImport }) {
 
 function Extracting({ lib, onDone }) {
   const steps = [
-    "Reading source layout",
-    "Detecting sections, fields, and signatures",
-    "Capturing scoring and autofill hints",
+    "Loading the reference schema",
+    "Creating sections and fields",
+    "Applying autofill and sign-off rules",
     "Saving the editable draft",
   ];
   const [active, setActive] = useState(0);
@@ -458,9 +458,9 @@ function Builder({ templateKey, onClose, onToast }) {
               </div>
               <div>
                 <label className="il">Subject</label>
-                <select className="ds-select" style={{ width: "100%" }} value={template.subject} onChange={(e) => patchTemplate({ subject: e.target.value })}>
+                <select className="ds-select" style={{ width: "100%" }} value={template.subject === "client" ? "client" : "self"} onChange={(e) => patchTemplate({ subject: e.target.value })}>
                   <option value="client">Client</option>
-                  <option value="employee">Employee</option>
+                  <option value="self">Employee (self)</option>
                 </select>
               </div>
               <div>
@@ -628,12 +628,16 @@ const ROLE_COLORS = {
   client: "#8b5cf6",
 };
 
+// Must match window.DTC_COURSES on courses.daretocarehomecare.com (and the
+// NewHirePortal checklist) — completion is proven by certificates, not a
+// separate in-app progress flag.
 const TRAINING_MODULES = [
   { id: "emergency", title: "Emergency Preparedness & Disaster Planning" },
-  { id: "home_safety", title: "Home Safety" },
-  { id: "first_aid", title: "First Aid & Basic Life Safety" },
-  { id: "infection", title: "Infection Control" },
-  { id: "consumer_rights", title: "Consumer Rights & Responsibilities" },
+  { id: "home-safety", title: "Home Safety" },
+  { id: "abuse", title: "Abuse & Neglect Prevention" },
+  { id: "first-aid", title: "Basic First Aid" },
+  { id: "infection", title: "Infection Control & Universal Precautions" },
+  { id: "rights", title: "Consumer Rights & Behavior Management" },
 ];
 
 function UsersPage({ onToast }) {
@@ -645,21 +649,14 @@ function UsersPage({ onToast }) {
   const [createdUser, setCreatedUser] = useState(null); // shown in success modal
   const [showPass, setShowPass] = useState(false);
   const [loadingPwd, setLoadingPwd] = useState(false);
-  const [trainingProgress, setTrainingProgress] = useState(null);
-  const [loadingTraining, setLoadingTraining] = useState(false);
 
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
-  useEffect(() => {
-    if (!editUser || editUser.role !== "newHire") { setTrainingProgress(null); return; }
-    let cancelled = false;
-    setLoadingTraining(true);
-    Store.getUserTrainingProgress(editUser.id)
-      .then((data) => { if (!cancelled) setTrainingProgress(data.progress); })
-      .catch(() => { if (!cancelled) setTrainingProgress(null); })
-      .finally(() => { if (!cancelled) setLoadingTraining(false); });
-    return () => { cancelled = true; };
-  }, [editUser]);
+  // Training completion comes from real course-site certificates (matched by
+  // email or manual link on the Certificates page) — same source of truth the
+  // New Hire portal uses.
+  const editUserCerts = editUser ? Store.certificatesForUser(editUser) : [];
+  const certByCourse = new Map(editUserCerts.map((c) => [c.courseId, c]));
 
   const users = Store.getUsers();
   const filtered = users.filter((u) => {
@@ -692,7 +689,7 @@ function UsersPage({ onToast }) {
   const doEdit = async () => {
     if (!editUser) return;
     try {
-      await Store.updateUser(editUser.id, { name: editUser.name, role: editUser.role, status: editUser.status });
+      await Store.updateUser(editUser.id, { name: editUser.name, role: editUser.role, status: editUser.status, shadowCompletedAt: editUser.shadowCompletedAt ?? null });
       onToast("User updated");
       setEditUser(null);
     } catch (err) { onToast(err.message || "Error"); }
@@ -779,29 +776,38 @@ function UsersPage({ onToast }) {
 
               {editUser.role === "newHire" && (
                 <div style={{ marginTop: 16 }}>
-                  <div className="form-label" style={{ marginBottom: 8 }}>Training progress</div>
-                  {loadingTraining ? (
-                    <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Loading…</div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {TRAINING_MODULES.map((m) => {
-                        const completedAt = trainingProgress?.[m.id];
-                        return (
-                          <div key={m.id} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "8px 12px", borderRadius: 10,
-                            background: completedAt ? "rgba(47,138,104,0.07)" : "rgba(0,0,0,0.03)",
-                            border: `1px solid ${completedAt ? "rgba(47,138,104,0.2)" : "rgba(0,0,0,0.06)"}`,
-                          }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>{m.title}</span>
-                            <span style={{ fontSize: 11.5, fontWeight: 700, color: completedAt ? "var(--accent-2)" : "var(--ink-3)" }}>
-                              {completedAt ? `✓ ${relTime(completedAt)}` : "Not started"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <div className="form-label" style={{ marginBottom: 8 }}>Training progress (from course certificates)</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {TRAINING_MODULES.map((m) => {
+                      const cert = certByCourse.get(m.id);
+                      return (
+                        <div key={m.id} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "8px 12px", borderRadius: 10,
+                          background: cert ? "rgba(47,138,104,0.07)" : "rgba(0,0,0,0.03)",
+                          border: `1px solid ${cert ? "rgba(47,138,104,0.2)" : "rgba(0,0,0,0.06)"}`,
+                        }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>{m.title}</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: cert ? "var(--accent-2)" : "var(--ink-3)" }}>
+                            {cert ? `✓ Passed${cert.score != null ? ` · ${cert.score}%` : ""}` : "Not started"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)" }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
+                      Shadow visit completed
+                      <span style={{ display: "block", fontWeight: 400, fontSize: 11, color: "var(--ink-3)" }}>
+                        Sign off once they've shadowed a senior caregiver.
+                        {editUser.shadowCompletedAt ? ` Signed off ${relTime(editUser.shadowCompletedAt)}.` : ""}
+                      </span>
+                    </span>
+                    <button
+                      className={`tgl${editUser.shadowCompletedAt ? " on" : ""}`}
+                      onClick={() => setEditUser({ ...editUser, shadowCompletedAt: editUser.shadowCompletedAt ? null : new Date().toISOString() })}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -958,8 +964,8 @@ function ClientsPage({ onToast }) {
   const openEdit = async (client) => {
     setEditClient({ ...client });
     try {
-      const ids = await Store.getClientAssignments(client.id);
-      setEditAssignments(ids);
+      const { assignments } = await Store.getClientAssignments(client.id);
+      setEditAssignments(Array.isArray(assignments) ? assignments : []);
     } catch {
       setEditAssignments([]);
     }

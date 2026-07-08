@@ -8,8 +8,22 @@
 //  2. The PDF has no form fields (a flat/scanned document) — its text is extracted
 //     page-by-page with pdfjs-dist so nothing is lost, shown as reference content,
 //     plus an empty starter section the admin fills in using the existing field builder.
+//
+// Note: field-type detection uses `instanceof` against pdf-lib's exported classes,
+// NOT `field.constructor.name` — production minification renames classes, which
+// silently broke name-based matching (every field came back unrecognized and the
+// resulting template had zero fields, even though pdf-lib had parsed them fine).
 
-import { PDFDocument, type PDFField } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFTextField,
+  PDFCheckBox,
+  PDFRadioGroup,
+  PDFDropdown,
+  PDFOptionList,
+  PDFSignature,
+  type PDFField,
+} from "pdf-lib";
 
 export type ExtractProgressStep =
   | "reading"
@@ -67,40 +81,36 @@ function uniqueId(base: string, used: Set<string>): string {
 }
 
 function mapAcroField(field: PDFField, used: Set<string>): any | null {
-  const type = field.constructor.name;
   const rawName = field.getName();
   const label = cleanLabel(rawName);
   const id = uniqueId(slugify(rawName), used);
   let required = false;
   try { required = typeof (field as any).isRequired === "function" ? (field as any).isRequired() : false; } catch { /* not all field types expose this reliably */ }
 
-  switch (type) {
-    case "PDFTextField": {
-      let multiline = false;
-      try { multiline = (field as any).isMultiline(); } catch { /* ignore */ }
-      return { id, label, type: multiline ? "textarea" : "text", required };
-    }
-    case "PDFCheckBox":
-      return { id, label, type: "checkbox", required, options: [{ label }] };
-    case "PDFRadioGroup": {
-      let opts: string[] = [];
-      try { opts = (field as any).getOptions(); } catch { /* ignore */ }
-      if (opts.length === 0) return null;
-      return { id, label, type: "radio", required, options: opts.map((o) => ({ label: o })) };
-    }
-    case "PDFDropdown":
-    case "PDFOptionList": {
-      let opts: string[] = [];
-      try { opts = (field as any).getOptions(); } catch { /* ignore */ }
-      if (opts.length === 0) return null;
-      return { id, label, type: "select", required, options: opts.map((o) => ({ label: o })) };
-    }
-    case "PDFSignature":
-      return { id, label, type: "signature", required };
-    case "PDFButton":
-    default:
-      return null; // push buttons and unrecognized field kinds aren't fillable inputs
+  if (field instanceof PDFTextField) {
+    let multiline = false;
+    try { multiline = field.isMultiline(); } catch { /* ignore */ }
+    return { id, label, type: multiline ? "textarea" : "text", required };
   }
+  if (field instanceof PDFCheckBox) {
+    return { id, label, type: "checkbox", required, options: [{ label }] };
+  }
+  if (field instanceof PDFRadioGroup) {
+    let opts: string[] = [];
+    try { opts = field.getOptions(); } catch { /* ignore */ }
+    if (opts.length === 0) return null;
+    return { id, label, type: "radio", required, options: opts.map((o) => ({ label: o })) };
+  }
+  if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
+    let opts: string[] = [];
+    try { opts = field.getOptions(); } catch { /* ignore */ }
+    if (opts.length === 0) return null;
+    return { id, label, type: "select", required, options: opts.map((o) => ({ label: o })) };
+  }
+  if (field instanceof PDFSignature) {
+    return { id, label, type: "signature", required };
+  }
+  return null; // push buttons and unrecognized field kinds aren't fillable inputs
 }
 
 function groupFieldsByPage(fields: PDFField[], pages: any[]): any[] {
@@ -181,12 +191,15 @@ export async function extractSchemaFromPdf(
   if (fields.length > 0) {
     sections = groupFieldsByPage(fields, pdfDoc.getPages());
     extractedFieldCount = sections.reduce((n, s) => n + s.fields.length, 0);
-    method = "form-fields";
+    method = extractedFieldCount > 0 ? "form-fields" : "text-only";
   } else {
+    method = "text-only";
+  }
+
+  if (method === "text-only") {
     onProgress?.("extracting-text");
     const pagesText = await extractPageText(bytes);
     sections = buildTextFallbackSections(pagesText);
-    method = "text-only";
   }
 
   onProgress?.("building");
@@ -203,7 +216,7 @@ export async function extractSchemaFromPdf(
     description: `Imported from ${file.name}`,
     subject: "client",
     completedBy: ["caregiver", "officeManager", "admin"],
-    sections,
+    sections: sections!,
     sourceFile: file.name,
     sourcePages: pageCount,
     extractionMethod: method,

@@ -227,6 +227,28 @@ export const DTCStore = {
     return template;
   },
 
+  // Real, arbitrary-PDF import: unlike importTemplate (which clones one of the
+  // fixed reference-library schemas), this accepts a schema built at runtime by
+  // src/utils/pdfExtract.ts from whatever PDF the admin actually uploaded.
+  async importUploadedSchema(schema) {
+    const key = state.templates.some((t) => t.key === schema.key)
+      ? `${schema.key}_${Date.now().toString(36)}`
+      : schema.key;
+    const fieldCount = (schema.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
+    const template = {
+      ...schema,
+      key,
+      status: "draft",
+      version: schema.version || 1,
+      fieldCount,
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, "templates", key), template);
+    await logAudit("template_imported", schema.name || key, `Uploaded from ${schema.sourceFile || "PDF"}`);
+    await refresh();
+    return template;
+  },
+
   async saveTemplate(template) {
     const fieldCount = (template.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
     const toSave = { ...template, fieldCount, updatedAt: new Date().toISOString() };

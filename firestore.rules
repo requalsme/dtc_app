@@ -42,14 +42,35 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    // Form templates define what every form asks and what gets signed. Changing
+    // one silently changes the meaning of every future submission, so this is
+    // admin-only — an office manager can assign and review forms but cannot
+    // alter the forms themselves.
     match /templates/{templateId} {
       allow read: if isSignedIn();
-      allow write: if isStaff();
+      allow write: if isAdmin();
     }
 
     match /submissions/{submissionId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
+
+      // Anyone signed in may file a form; it must arrive as "submitted" and
+      // stamped with its author, so a record can't be back-dated or attributed
+      // to someone else at creation.
+      allow create: if isSignedIn()
+                    && request.resource.data.status == 'submitted';
+
+      // A submitted form is a signed record. Office managers and admins may
+      // review it, request a correction, or attach the filed PDF. The caregiver
+      // who filed it may only touch it while it is sitting in needsCorrection —
+      // i.e. to fix and resubmit what they were asked to fix.
+      allow update: if isStaff()
+                    || (
+                         resource.data.caregiverId == request.auth.uid
+                         && resource.data.status == 'needsCorrection'
+                       );
+
+      // Signed records are never destroyed. Corrections supersede; they don't erase.
       allow delete: if false;
     }
 

@@ -8,6 +8,7 @@ import { PdfPreview, getSchema } from "../../components/forms/FormWizard";
 import { FormWizard } from "../../components/forms/FormWizard";
 import { OfficeDashboard } from "./OfficeDashboard";
 import { FiledDocuments } from "../../components/FiledDocuments";
+import { ClientKeyFacts } from "../../components/ClientKeyFacts";
 import { fmtDate } from "../../utils/format";
 
 const relTime = (iso: string) => {
@@ -434,6 +435,7 @@ function ClientDirectory() {
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
   const [openClient, setOpenClient] = useState<any>(null);
+  const [clientTab, setClientTab] = useState<"facts" | "docs">("facts");
 
   const clients = Store.clients.filter((c: any) =>
     !search || c.name.toLowerCase().includes(search.toLowerCase())
@@ -457,13 +459,31 @@ function ClientDirectory() {
             </p>
           </div>
         </div>
+        <div className="ds-filters" style={{ gap: 6 }}>
+          <button
+            className={clientTab === "facts" ? "dbtn dbtn-primary" : "dbtn dbtn-ghost"}
+            onClick={() => setClientTab("facts")}
+          >
+            Key details
+          </button>
+          <button
+            className={clientTab === "docs" ? "dbtn dbtn-primary" : "dbtn dbtn-ghost"}
+            onClick={() => setClientTab("docs")}
+          >
+            Filed documents
+          </button>
+        </div>
         <div className="ds-panel" style={{ padding: 16 }}>
-          <FiledDocuments
-            subjectType="client"
-            subjectId={openClient.id}
-            subjectName={openClient.name}
-            emptyHint={`No forms have been filed for ${openClient.name} yet.`}
-          />
+          {clientTab === "facts" ? (
+            <ClientKeyFacts clientId={openClient.id} />
+          ) : (
+            <FiledDocuments
+              subjectType="client"
+              subjectId={openClient.id}
+              subjectName={openClient.name}
+              emptyHint={`No forms have been filed for ${openClient.name} yet.`}
+            />
+          )}
         </div>
       </div>
     );

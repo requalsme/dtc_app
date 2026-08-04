@@ -7,6 +7,7 @@ import { DTCStore as Store } from "../../components/store.js";
 import { PdfPreview, getSchema } from "../../components/forms/FormWizard";
 import { FormWizard } from "../../components/forms/FormWizard";
 import { OfficeDashboard } from "./OfficeDashboard";
+import { FiledDocuments } from "../../components/FiledDocuments";
 import { fmtDate } from "../../utils/format";
 
 const relTime = (iso: string) => {
@@ -70,6 +71,7 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
   const [assignedToId, setAssignedToId] = useState("");
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [priority, setPriority] = useState("normal");
+  const [recurrence, setRecurrence] = useState("");
   const [startingWizard, setStartingWizard] = useState(false);
 
   const officeTemplates = Store.getPublishedTemplates
@@ -93,6 +95,11 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
       assignedToName: caregiver?.name || "Office Manager",
       dueDate,
       priority,
+      status: "pending",
+      // When set, completing this task automatically schedules the next one.
+      // This is what makes "supervisory visit every 90 days" and "care plan
+      // yearly" hold without anyone remembering to re-create them.
+      recurrence: recurrence || null,
     });
 
     onToast("Task created");
@@ -164,6 +171,21 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
               <option value="normal">Normal</option>
               <option value="low">Low</option>
             </select>
+          </div>
+          <div className="form-row">
+            <label className="form-label" htmlFor="sf-recur">Repeat</label>
+            <select id="sf-recur" className="ds-select" value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+              <option value="">Does not repeat</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Every 90 days</option>
+              <option value="semiannual">Every 6 months</option>
+              <option value="annual">Yearly</option>
+            </select>
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>
+              {recurrence
+                ? "Completing this task automatically schedules the next one."
+                : "Supervisory visits repeat every 90 days; care plans yearly."}
+            </div>
           </div>
         </div>
         <div className="modal-foot">
@@ -411,16 +433,48 @@ function ClientDirectory() {
   const [search, setSearch] = useState("");
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
+  const [openClient, setOpenClient] = useState<any>(null);
+
   const clients = Store.clients.filter((c: any) =>
     !search || c.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Drilled into one client: show their file — every document completed about
+  // them, in one place, the way a paper folder would hold it.
+  if (openClient) {
+    return (
+      <div>
+        <div className="ds-ph">
+          <div>
+            <button className="btn btn-ghost" style={{ marginBottom: 8 }} onClick={() => setOpenClient(null)}>
+              <Icon n="arrowLeft" s={16} /> All clients
+            </button>
+            <h1>{openClient.name}</h1>
+            <p>
+              Client file — every form completed about {openClient.name}.
+              {openClient.dob ? ` DOB ${fmtDate(openClient.dob)}.` : ""}
+              {openClient.mrn ? ` MRN ${openClient.mrn}.` : ""}
+            </p>
+          </div>
+        </div>
+        <div className="ds-panel" style={{ padding: 16 }}>
+          <FiledDocuments
+            subjectType="client"
+            subjectId={openClient.id}
+            subjectName={openClient.name}
+            emptyHint={`No forms have been filed for ${openClient.name} yet.`}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="ds-ph">
         <div>
           <h1>Clients</h1>
-          <p>Shared directory with profile details used for autofill and visit records.</p>
+          <p>Shared directory with profile details used for autofill and visit records. Select a client to open their file.</p>
         </div>
       </div>
       <div className="ds-filters">
@@ -435,7 +489,7 @@ function ClientDirectory() {
           </thead>
           <tbody>
             {clients.map((c: any) => (
-              <tr key={c.id} style={{ cursor: "default" }}>
+              <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => setOpenClient(c)}>
                 <td>
                   <span className="row-ic">
                     <span className="ti">{c.initials}</span>
@@ -467,14 +521,42 @@ function TeamDirectory() {
   const [, force] = useState(0);
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
+  const [openStaff, setOpenStaff] = useState<any>(null);
+
   const caregivers = Store.getUsers().filter((u: any) => u.role === "caregiver");
+
+  // One staff member's own file: their signed paperwork and policy
+  // acknowledgements (forms about a client live on that client's file instead).
+  if (openStaff) {
+    return (
+      <div>
+        <div className="ds-ph">
+          <div>
+            <button className="btn btn-ghost" style={{ marginBottom: 8 }} onClick={() => setOpenStaff(null)}>
+              <Icon n="arrowLeft" s={16} /> All team members
+            </button>
+            <h1>{openStaff.name}</h1>
+            <p>Staff file — signed paperwork and acknowledgements for {openStaff.name}.</p>
+          </div>
+        </div>
+        <div className="ds-panel" style={{ padding: 16 }}>
+          <FiledDocuments
+            subjectType="staff"
+            subjectId={openStaff.id}
+            subjectName={openStaff.name}
+            emptyHint={`No paperwork has been filed for ${openStaff.name} yet.`}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="ds-ph">
         <div>
           <h1>Team</h1>
-          <p>Caregiver roster with live submission counts and assigned client counts.</p>
+          <p>Caregiver roster with live submission counts. Select someone to open their staff file.</p>
         </div>
       </div>
       <div className="ds-panel">
@@ -488,7 +570,7 @@ function TeamDirectory() {
             {caregivers.map((u: any) => {
               const subs = Store.getSubmissions().filter((s: any) => s.caregiverId === u.id);
               return (
-                <tr key={u.id} style={{ cursor: "default" }}>
+                <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => setOpenStaff(u)}>
                   <td>
                     <span className="row-ic">
                       <span className="ti">{u.initials}</span>

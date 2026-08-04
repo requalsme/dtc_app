@@ -26,10 +26,12 @@ function Templates({ onEdit, onNav, onToast }) {
   const [filterCat, setFilterCat] = useState("");
   const [showVersions, setShowVersions] = useState(null);
   const [versions, setVersions] = useState([]);
+  const [pubBusy, setPubBusy] = useState(false);
 
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
   const templates = Store.getTemplates();
+  const draftCount = templates.filter((t) => t.status !== "published").length;
   const categories = Array.from(new Set(templates.map((t) => t.category).filter(Boolean)));
 
   const filtered = useMemo(() => templates.filter((t) => {
@@ -91,6 +93,32 @@ function Templates({ onEdit, onNav, onToast }) {
           <p>Digitized forms move from import to editable draft to published workflow.</p>
         </div>
         <div className="actions">
+          {/* Publishing 30+ imported drafts one at a time is a lot of clicking
+              for what is usually a single decision: "put the packet live". */}
+          {draftCount > 0 ? (
+            <button
+              className="dbtn dbtn-ghost"
+              disabled={pubBusy}
+              onClick={async () => {
+                const drafts = Store.getTemplates().filter((t) => t.status !== "published");
+                if (!drafts.length) return;
+                setPubBusy(true);
+                let done = 0;
+                for (const t of drafts) {
+                  try {
+                    await Store.publishTemplate(t.key);
+                  } catch {
+                    /* keep going — one failure shouldn't block the rest */
+                  }
+                  done++;
+                }
+                setPubBusy(false);
+                onToast(`Published ${done} form${done === 1 ? "" : "s"}`);
+              }}
+            >
+              <Icon n="checkCircle" s={15} /> {pubBusy ? "Publishing…" : `Publish all ${draftCount} drafts`}
+            </button>
+          ) : null}
           <button className="dbtn dbtn-primary" onClick={() => onNav("upload")}>
             <Icon n="upload" s={15} /> Import PDF
           </button>
@@ -164,13 +192,29 @@ function Templates({ onEdit, onNav, onToast }) {
 
 // ── Upload/Library ─────────────────────────────────────────────────────────
 
-function Upload({ onImport, onUploadFile }) {
+// Order the library sections are shown in: intake first, then the recurring
+// clinical/visit work, then policy. Any category not listed falls to the end.
+const LIBRARY_CATEGORY_ORDER = [
+  "Admission",
+  "Onboarding",
+  "Clinical",
+  "Supervisory",
+  "Visit",
+  "Policy",
+  "Client",
+  "Other",
+];
+
+function Upload({ onImport, onUploadFile, onToast }) {
   const [, force] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [fileErr, setFileErr] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState("");
   const inputRef = useRef(null);
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
   const library = Store.getLibrary();
+  const importedCount = library.filter((i) => i.imported).length;
 
   const acceptFile = (file) => {
     if (!file) return;
@@ -214,27 +258,88 @@ function Upload({ onImport, onUploadFile }) {
         </button>
         {fileErr ? <div style={{ color: "var(--red)", fontSize: 12.5, marginTop: 10 }}>{fileErr}</div> : null}
       </div>
-      <div className="ds-navlabel" style={{ padding: "2px 2px 12px" }}>Reference library</div>
-      <div className="upload-grid">
-        {library.map((item) => (
-          <div className="lib-card" key={item.id}>
-            <div className="lh">
-              <div className="pdf-ic"><span className="corner" /></div>
-              <div className="li">
-                <div className="fn">{item.file}</div>
-                <div className="fm">{item.pages} page{item.pages > 1 ? "s" : ""} · {Store.schemaName(item.schemaKey)}</div>
-              </div>
+      <div
+        className="ds-navlabel"
+        style={{ padding: "2px 2px 12px", display: "flex", alignItems: "center", gap: 10 }}
+      >
+        <span>
+          Reference library
+          <span style={{ color: "var(--ink-3)", fontWeight: 400, marginLeft: 8 }}>
+            {importedCount} of {library.length} imported
+          </span>
+        </span>
+        {/* Importing 33 forms one at a time is ~33 round trips through the
+            extract screen. This brings them all in as drafts in one go; each
+            can still be opened and edited afterwards, and nothing goes live
+            until it is published. */}
+        {importedCount < library.length ? (
+          <button
+            className="dbtn dbtn-ghost"
+            style={{ padding: "5px 11px", fontSize: 11.5, marginLeft: "auto" }}
+            disabled={bulkBusy}
+            onClick={async () => {
+              const pending = library.filter((i) => !i.imported);
+              if (!pending.length) return;
+              setBulkBusy(true);
+              setBulkMsg(`Importing 0 of ${pending.length}…`);
+              let done = 0;
+              for (const item of pending) {
+                try {
+                  await Store.importTemplate(item.schemaKey);
+                } catch {
+                  /* keep going — one bad form shouldn't stop the rest */
+                }
+                done++;
+                setBulkMsg(`Importing ${done} of ${pending.length}…`);
+              }
+              setBulkBusy(false);
+              setBulkMsg("");
+              onToast?.(`Imported ${done} form${done === 1 ? "" : "s"} as drafts`);
+            }}
+          >
+            <Icon n="download" s={13} /> {bulkBusy ? bulkMsg : `Import all ${library.length - importedCount} remaining`}
+          </button>
+        ) : null}
+      </div>
+      {/* Grouped by category — a flat list of 33 forms keyed on filename is
+          impossible to scan, and several share a source PDF. */}
+      {LIBRARY_CATEGORY_ORDER
+        .map((cat) => [cat, library.filter((i) => i.category === cat)])
+        .filter(([, items]) => items.length > 0)
+        .map(([cat, items]) => (
+          <div key={cat} style={{ marginBottom: 22 }}>
+            <div
+              className="section-label"
+              style={{ padding: "0 2px 8px", display: "flex", alignItems: "center", gap: 8 }}
+            >
+              {cat}
+              <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>{items.length}</span>
             </div>
-            <div className="la">
-              {item.imported ? <span className="spill pub">Imported</span> : <span className="spill draft">Ready</span>}
-              <button className="dbtn dbtn-primary" style={{ padding: "7px 13px", fontSize: 12 }} onClick={() => onImport(item)}>
-                <Icon n="sparkle" s={13} />
-                {item.imported ? "Re-open" : "Import & extract"}
-              </button>
+            <div className="upload-grid">
+              {items.map((item) => (
+                <div className="lib-card" key={item.id}>
+                  <div className="lh">
+                    <div className="pdf-ic"><span className="corner" /></div>
+                    <div className="li">
+                      {/* Lead with the form name; the source PDF is provenance. */}
+                      <div className="fn">{item.name}</div>
+                      <div className="fm">
+                        {item.pages} page{item.pages > 1 ? "s" : ""} · {item.file}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="la">
+                    {item.imported ? <span className="spill pub">Imported</span> : <span className="spill draft">Ready</span>}
+                    <button className="dbtn dbtn-primary" style={{ padding: "7px 13px", fontSize: 12 }} onClick={() => onImport(item)}>
+                      <Icon n="sparkle" s={13} />
+                      {item.imported ? "Re-open" : "Import & extract"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ))}
-      </div>
     </div>
   );
 }
@@ -1409,7 +1514,7 @@ function AdminApp({ page, onNav, onToast }) {
   switch (page) {
     case "dashboard": return <AdminDashboard />;
     case "templates": return <Templates onEdit={setEditingKey} onNav={onNav} onToast={onToast} />;
-    case "upload": return <Upload onImport={(item) => { setImportLib(item); setExtracting(true); }} onUploadFile={setUploadFile} />;
+    case "upload": return <Upload onImport={(item) => { setImportLib(item); setExtracting(true); }} onUploadFile={setUploadFile} onToast={onToast} />;
     case "users": return <UsersPage onToast={onToast} />;
     case "clients": return <ClientsPage onToast={onToast} />;
     case "audit": return <AuditLog />;

@@ -468,7 +468,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <>
                 <label className="login-field">
                   <span>Phone Number</span>
-                  <input
+                  <input 
                     type="tel"
                     placeholder="(555) 123-4567"
                     value={phoneToLink}
@@ -488,7 +488,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <>
                 <label className="login-field">
                   <span>Verification Code</span>
-                  <input
+                  <input 
                     type="text"
                     placeholder="123456"
                     value={linkCode}

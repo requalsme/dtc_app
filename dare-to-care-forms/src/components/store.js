@@ -1,5 +1,11 @@
 import { collection, doc, getDocs, setDoc, addDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { auth, db, firebaseConfig } from "../config/firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage, firebaseConfig } from "../config/firebase";
+// Static: FormWizard already imports this, so a dynamic import here would not
+// split it into its own chunk. The heavy libraries (jspdf, html2canvas) are
+// dynamically imported inside utils/pdf itself, which is where the win actually is.
+// @ts-ignore
+import { elementToPdfBlob } from "../utils/pdf";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 
@@ -82,7 +88,48 @@ function normalizeTemplate(t) {
   return { ...t, sections: [] };
 }
 
+// Every form an admin can import and publish. A schema that is missing from
+// this list exists in code but is unreachable from the UI, so anything added to
+// DTC.schemas must be added here too.
+//
+// `file` names the source PDF the schema was transcribed from, so a form can
+// always be traced back to the paper document it has to match.
+// Advance a due date by one recurrence interval. Counted from the date the task
+// was DUE, not the date it was completed, so a visit done late doesn't quietly
+// push the whole schedule later and drift out of compliance.
+function nextDueDate(fromISO, recurrence) {
+  if (!fromISO || !recurrence) return null;
+  const d = new Date(fromISO + (fromISO.length === 10 ? "T00:00:00" : ""));
+  if (Number.isNaN(d.getTime())) return null;
+
+  switch (recurrence) {
+    case "monthly": d.setMonth(d.getMonth() + 1); break;
+    case "quarterly": d.setDate(d.getDate() + 90); break;   // 90 days, per the Care Plan
+    case "semiannual": d.setMonth(d.getMonth() + 6); break;
+    case "annual": d.setFullYear(d.getFullYear() + 1); break;
+    default: return null;
+  }
+
+  // If the task was completed so late that the next date is already in the
+  // past, roll forward to the next future occurrence rather than creating a
+  // task that is born overdue.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let guard = 0;
+  while (d < today && guard < 60) {
+    switch (recurrence) {
+      case "monthly": d.setMonth(d.getMonth() + 1); break;
+      case "quarterly": d.setDate(d.getDate() + 90); break;
+      case "semiannual": d.setMonth(d.getMonth() + 6); break;
+      case "annual": d.setFullYear(d.getFullYear() + 1); break;
+      default: return null;
+    }
+    guard++;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 const referenceLibrary = [
+  // ── Standalone forms ─────────────────────────────────────────────────────
   { id: "lib_fallRisk", file: "Fall_Risk_Assessment.pdf", pages: 1, schemaKey: "fallRisk" },
   { id: "lib_medList", file: "Medication_List.pdf", pages: 1, schemaKey: "medicationList" },
   { id: "lib_wpv", file: "Workplace_Violence_Policy_Acknowledgement.pdf", pages: 1, schemaKey: "workplaceViolence" },
@@ -90,6 +137,38 @@ const referenceLibrary = [
   { id: "lib_super", file: "Supervisory_Visit_Form.pdf", pages: 1, schemaKey: "supervisoryVisit" },
   { id: "lib_ccpr", file: "Client_Care_Plan_Review.pdf", pages: 1, schemaKey: "clientCarePlanReview" },
   { id: "lib_epp", file: "Emergency_Preparedness_Plan.pdf", pages: 1, schemaKey: "emergencyPreparedness" },
+  { id: "lib_carePlan", file: "Client Admission Packet.pdf (p.15-16)", pages: 2, schemaKey: "clientCarePlan" },
+
+  // ── New Hire Packet (30pp, 2026-07-27) ───────────────────────────────────
+  { id: "lib_jd_home", file: "New Hire Packet.pdf (p.5)", pages: 1, schemaKey: "homemakerJobDescription" },
+  { id: "lib_jd_pcw", file: "New Hire Packet.pdf (p.6)", pages: 1, schemaKey: "pcwJobDescription" },
+  { id: "lib_jd_ihss", file: "New Hire Packet.pdf (p.7-8)", pages: 2, schemaKey: "ihssAttendantJobDescription" },
+  { id: "lib_orient", file: "New Hire Packet.pdf (p.9-10)", pages: 2, schemaKey: "orientationChecklist" },
+  { id: "lib_avail", file: "New Hire Packet.pdf (p.10-11)", pages: 2, schemaKey: "caregiverAvailability" },
+  { id: "lib_rules", file: "New Hire Packet.pdf (p.12-13)", pages: 2, schemaKey: "rulesOfTheRoad" },
+  { id: "lib_handbook", file: "New Hire Packet.pdf (p.13-14)", pages: 2, schemaKey: "employeeHandbookAck" },
+  { id: "lib_policies", file: "New Hire Packet.pdf (p.14-15)", pages: 2, schemaKey: "policiesReceipt" },
+  { id: "lib_scope", file: "New Hire Packet.pdf (p.16-18)", pages: 3, schemaKey: "careScopeAndTasks" },
+  { id: "lib_missed", file: "New Hire Packet.pdf (p.22)", pages: 1, schemaKey: "missedVisitsPolicy" },
+  { id: "lib_flu", file: "New Hire Packet.pdf (p.23)", pages: 1, schemaKey: "fluVaccineStatement" },
+  { id: "lib_comp", file: "New Hire Packet.pdf (p.27-29)", pages: 3, schemaKey: "competencyValidation" },
+
+  // ── Client Admission Packet (29pp, 2026-07-27) ───────────────────────────
+  { id: "lib_welcome", file: "Client Admission Packet.pdf (p.4)", pages: 1, schemaKey: "welcomeLetter" },
+  { id: "lib_agreement", file: "Client Admission Packet.pdf (p.5-8)", pages: 4, schemaKey: "homeCareServicesAgreement" },
+  { id: "lib_assess", file: "Client Admission Packet.pdf (p.9-13)", pages: 5, schemaKey: "clientAssessment" },
+  { id: "lib_rights", file: "Client Admission Packet.pdf (p.17)", pages: 1, schemaKey: "consumerRights" },
+  { id: "lib_disclosure", file: "Client Admission Packet.pdf (p.18)", pages: 1, schemaKey: "agencyDisclosure" },
+  { id: "lib_conf", file: "Client Admission Packet.pdf (p.20)", pages: 1, schemaKey: "consumerConfidentiality" },
+  { id: "lib_hipaa", file: "Client Admission Packet.pdf (p.21-23)", pages: 3, schemaKey: "privacyPracticesNotice" },
+  { id: "lib_advdir", file: "Client Admission Packet.pdf (p.25)", pages: 1, schemaKey: "advanceDirectivesNotice" },
+  { id: "lib_billing", file: "Client Admission Packet.pdf (p.26)", pages: 1, schemaKey: "financialBillingNotice" },
+  { id: "lib_eppclient", file: "Client Admission Packet.pdf (p.27-28)", pages: 2, schemaKey: "eppClientInfo" },
+
+  // ── Client portal ────────────────────────────────────────────────────────
+  { id: "lib_cec", file: "Emergency_Contacts.pdf", pages: 1, schemaKey: "clientEmergencyContacts" },
+  { id: "lib_ccp", file: "Care_Preferences.pdf", pages: 1, schemaKey: "clientCarePreferences" },
+  { id: "lib_csat", file: "Satisfaction_Survey.pdf", pages: 1, schemaKey: "clientSatisfaction" },
 ];
 
 const state = {
@@ -186,10 +265,19 @@ export const DTCStore = {
   reset() { clearState(); },
 
   getLibrary() {
-    return referenceLibrary.map((item) => ({
-      ...item,
-      imported: state.templates.some((t) => t.key === item.schemaKey),
-    }));
+    return referenceLibrary.map((item) => {
+      const schema = DTC.schemas[item.schemaKey] || {};
+      return {
+        ...item,
+        // Carried through so the library can lead with the form's name and
+        // group by category — with 33 entries, a flat list keyed on filename
+        // is unreadable.
+        name: schema.name || item.schemaKey,
+        category: schema.category || "Other",
+        description: schema.description || "",
+        imported: state.templates.some((t) => t.key === item.schemaKey),
+      };
+    });
   },
 
   schemaName(schemaKey) {
@@ -314,6 +402,76 @@ export const DTCStore = {
   removeFromQueue,
   async syncQueue() { await syncQueue(); },
 
+  // ─── Filing ──────────────────────────────────────────────────────────────
+  // Every completed form is filed as a PDF against the person it belongs to,
+  // so records live under a client's or staff member's name the way a paper
+  // folder would — rather than only existing if someone clicks "download".
+
+  // A form is filed under the client it is about; forms with no client (new-hire
+  // paperwork, policy acknowledgements) are filed under the staff member who
+  // signed them.
+  subjectForSubmission(sub) {
+    if (!sub) return null;
+    if (sub.clientId) {
+      return { type: "client", id: sub.clientId, name: sub.clientName || "Client" };
+    }
+    if (sub.caregiverId) {
+      return { type: "staff", id: sub.caregiverId, name: sub.caregiverName || "Staff" };
+    }
+    return null;
+  },
+
+  // All filed records for one person, newest first.
+  submissionsForSubject(type, id) {
+    if (!id) return [];
+    const key = type === "client" ? "clientId" : "caregiverId";
+    return state.submissions
+      .filter((s) => s[key] === id)
+      // A client-subject form belongs to the client, not to the caregiver who
+      // filled it in — so it must not also appear in that caregiver's own file.
+      .filter((s) => (type === "staff" ? !s.clientId : true))
+      .sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || "")));
+  },
+
+  // Renders the on-screen document, uploads it, and links it to the record.
+  // Never throws: a storage failure must not lose an already-saved submission,
+  // so it degrades to pdfPending and can be regenerated later.
+  async fileSubmissionPdf(saved, sheetEl) {
+    if (!saved?.id || saved.queued || !sheetEl) {
+      if (saved?.id && !saved.queued) {
+        try { await updateDoc(doc(db, "submissions", saved.id), { pdfPending: true }); } catch { /* non-fatal */ }
+      }
+      return null;
+    }
+    const subject = DTCStore.subjectForSubmission(saved);
+    if (!subject) return null;
+    try {
+      const blob = await elementToPdfBlob(sheetEl);
+      // Filed documents are immutable. A corrected resubmission is filed as a new
+      // version alongside the original rather than overwriting it, so there is
+      // always a record of exactly what was signed and when.
+      const path = `filed/${subject.type}/${subject.id}/${saved.id}__${Date.now()}.pdf`;
+      const fileRef = storageRef(storage, path);
+      await uploadBytes(fileRef, blob, { contentType: "application/pdf" });
+      const url = await getDownloadURL(fileRef);
+      await updateDoc(doc(db, "submissions", saved.id), {
+        pdfUrl: url,
+        pdfPath: path,
+        pdfFiledAt: new Date().toISOString(),
+        pdfPending: false,
+        subjectType: subject.type,
+        subjectId: subject.id,
+      });
+      await logAudit("form_filed", saved.templateName || saved.schemaKey, subject.name);
+      await refresh();
+      return url;
+    } catch {
+      // Keep the record; flag that its PDF still needs generating.
+      try { await updateDoc(doc(db, "submissions", saved.id), { pdfPending: true }); } catch { /* non-fatal */ }
+      return null;
+    }
+  },
+
   async updateSubmission(id, patch) {
     const actor = state.user;
     const update = { ...patch };
@@ -375,6 +533,31 @@ export const DTCStore = {
 
   async updateTask(id, patch) {
     await updateDoc(doc(db, "tasks", id), patch);
+
+    // Recurring compliance: completing a repeating task schedules the next one.
+    // Without this, "supervisory visit every 90 days" and "care plan yearly"
+    // fire exactly once and then silently stop — which is the failure mode a
+    // survey would catch.
+    if (patch.status === "completed") {
+      const task = state.tasks.find((t) => t.id === id);
+      if (task?.recurrence) {
+        const next = nextDueDate(task.dueDate, task.recurrence);
+        if (next) {
+          const { id: _drop, completedAt: _c, ...carry } = task;
+          await addDoc(collection(db, "tasks"), {
+            ...carry,
+            status: "pending",
+            dueDate: next,
+            // Points back at the occurrence that generated this one, so the
+            // chain is auditable rather than looking like duplicate tasks.
+            previousTaskId: id,
+            createdAt: new Date().toISOString(),
+          });
+          await logAudit("recurring_task_scheduled", task.title, next);
+        }
+      }
+    }
+
     await refresh();
     return { id, ...patch };
   },

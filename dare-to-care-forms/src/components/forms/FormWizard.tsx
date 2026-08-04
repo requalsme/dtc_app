@@ -42,8 +42,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ── PdfPreview — shown as the in-app document preview step ─────────────────
-export function PdfPreview({ schema, values, score, submission }: any) {
-  const sheetRef = useRef<HTMLDivElement>(null);
+// `sheetRef` may be supplied by a parent (the wizard) so it can capture this
+// same rendered sheet at submit time and file it against the client/staff member.
+export function PdfPreview({ schema, values, score, submission, sheetRef: externalSheetRef }: any) {
+  const localSheetRef = useRef<HTMLDivElement>(null);
+  const sheetRef = externalSheetRef || localSheetRef;
   const [downloading, setDownloading] = useState(false);
   const doDownload = async () => {
     if (!sheetRef.current) return;
@@ -343,6 +346,9 @@ export function FormWizard({
   const [step, setStep] = useState(0);
   const [tried, setTried] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // The rendered document sheet on the final step. Passed out on submit so the
+  // caller can file the exact document the user just approved.
+  const sheetRef = useRef<HTMLDivElement>(null);
   const ctx = { currentUser: D.currentUser, client };
 
   const appliedRef = useRef(false);
@@ -433,7 +439,7 @@ export function FormWizard({
         ) : step === REVIEW ? (
           <ReviewStep schema={schema} values={values} score={score} onEdit={(i: number) => { setStep(i + 1); scrollTop(); }} />
         ) : (
-          <PdfPreview schema={schema} values={values} score={score} />
+          <PdfPreview schema={schema} values={values} score={score} sheetRef={sheetRef} />
         )}
       </div>
 
@@ -444,7 +450,7 @@ export function FormWizard({
         ) : step === REVIEW ? (
           <button className="btn btn-primary" onClick={goNext}>Preview PDF</button>
         ) : (
-          <button className="btn btn-primary" disabled={isSubmitting} onClick={() => onSubmit({ schema, values, score, client })}>
+          <button className="btn btn-primary" disabled={isSubmitting} onClick={() => onSubmit({ schema, values, score, client, sheetEl: sheetRef.current })}>
             <Icon n="check" s={17} /> {submitLabel}
           </button>
         )}

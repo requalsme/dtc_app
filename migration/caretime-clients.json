@@ -1,0 +1,42 @@
+{
+  "_source": "CareTime > Clients > Client List, 'Active' filter (30 of 30).",
+  "_extracted": "2026-08-03",
+  "_notes": [
+    "Emails ending in @noemail.caretime.net are CareTime placeholders, not real addresses. They are carried over as `emailIsPlaceholder: true` so the app never tries to message them.",
+    "All 30 active clients are Medicaid type.",
+    "Service Coordinator is CareTime's internal assignment; kept for reference/reconciliation.",
+    "DOB, MRN, physician and allergies are NOT on the CareTime list view - they must be pulled per-client or entered in the app. The app's client model expects them for form autofill."
+  ],
+  "clients": [
+    { "name": "Clarence Archuleta", "email": "205688@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80219", "livesAlone": true },
+    { "name": "Bruce Batson", "email": "286776@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80212", "livesAlone": false },
+    { "name": "Mary Canning", "email": "MaryCanning49@gmail.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80239-5072", "livesAlone": false },
+    { "name": "Flora Carbajal", "email": "241293@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Adams", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Commerce", "zip": "80022", "livesAlone": true },
+    { "name": "Angel Carter-Carroll", "email": "chichi_tiger@gmail.com", "emailIsPlaceholder": false, "county": "Arapahoe", "type": "Medicaid", "serviceCoordinator": "", "city": "Aurora", "zip": "80015", "livesAlone": true },
+    { "name": "Shannon Coffey", "email": "242460@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80214", "livesAlone": false },
+    { "name": "Terry Edmondson", "email": "nipper22@comcast.net", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80229", "livesAlone": false },
+    { "name": "Donna Embry", "email": "210407@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80212", "livesAlone": true },
+    { "name": "Phillip Encinias", "email": "98daytona3@gmail.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80219", "livesAlone": false },
+    { "name": "Addisu Engida", "email": "256951@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Arapahoe", "type": "Medicaid", "serviceCoordinator": "", "city": "Aurora", "zip": "80011", "livesAlone": false },
+    { "name": "Curtis Fox", "email": "curtisfoxx2001@yahoo.com", "emailIsPlaceholder": false, "county": "Arapahoe", "type": "Medicaid", "serviceCoordinator": "", "city": "Aurora", "zip": "80010", "livesAlone": false },
+    { "name": "Dale Gonzales", "email": "248729@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Adams", "type": "Medicaid", "serviceCoordinator": "Rushane Harris", "city": "Aurora", "zip": "80010", "livesAlone": false },
+    { "name": "Debra Hardman", "email": "sukon42dds@gmail.com", "emailIsPlaceholder": false, "county": "Adams", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Westminster", "zip": "80030", "livesAlone": false },
+    { "name": "Angel Henderson", "email": "12345noemail@noemail.com", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80205", "livesAlone": false },
+    { "name": "Deonshay Hunter", "email": "288932@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80205", "livesAlone": false },
+    { "name": "Frances Hunter", "email": "256019@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Adams", "type": "Medicaid", "serviceCoordinator": "", "city": "Brighton", "zip": "80601", "livesAlone": false },
+    { "name": "Elizabeth Johnson", "email": "tishaarlene@gmail.com", "emailIsPlaceholder": false, "county": "Larimer", "type": "Medicaid", "serviceCoordinator": "", "city": "Westminster", "zip": "80030", "livesAlone": false },
+    { "name": "Jannise Martin", "email": "Jcarrmartin@gmail.com", "emailIsPlaceholder": false, "county": "Arapahoe", "type": "Medicaid", "serviceCoordinator": "", "city": "Deer Trail", "zip": "80105", "livesAlone": false },
+    { "name": "Terrie Phillips", "email": "TerriePhillips2023@gmail.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80205", "livesAlone": true },
+    { "name": "Julia Ramos", "email": "ramosjulia85@yahoo.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80223", "livesAlone": false },
+    { "name": "Cheryl Reed", "email": "Reedchry1233@gmail.com", "emailIsPlaceholder": false, "county": "Adams", "type": "Medicaid", "serviceCoordinator": "", "city": "Aurora", "zip": "80011", "livesAlone": true },
+    { "name": "William Richardson", "email": "264716@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80221", "livesAlone": false },
+    { "name": "Debra Ann Robinson", "email": "223307@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Arapahoe", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Aurora", "zip": "80013", "livesAlone": true },
+    { "name": "Angelina Rodriguez", "email": "Lindaruz13@gmail.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80221", "livesAlone": false },
+    { "name": "Tammy Sisneros", "email": "tsisnerros72@gmail.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Denver", "zip": "80219", "livesAlone": true },
+    { "name": "Cynthia Tabora", "email": "tabora.cynthia@yahoo.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80220", "livesAlone": false },
+    { "name": "Christopher Thacker", "email": "250826@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Adams", "type": "Medicaid", "serviceCoordinator": "", "city": "Northglenn", "zip": "80241", "livesAlone": false },
+    { "name": "Long Vuong", "email": "228386@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Broomfield", "type": "Medicaid", "serviceCoordinator": "Rejane Tisby", "city": "Broomfield", "zip": "80020", "livesAlone": true },
+    { "name": "Bruce Westmoreland", "email": "Brucewestmoreland5@gmail.com", "emailIsPlaceholder": false, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80218", "livesAlone": false },
+    { "name": "Claudia Whitten", "email": "236164@noemail.caretime.net", "emailIsPlaceholder": true, "county": "Denver", "type": "Medicaid", "serviceCoordinator": "", "city": "Denver", "zip": "80205", "livesAlone": true }
+  ]
+}

@@ -169,8 +169,16 @@ function AutofillChip({ field, ctx, value, onApply }) {
 }
 
 /* ---- Medication table ---- */
+// Repeating rows. Row/button wording and which columns render full-width come
+// from the schema, so this serves any table (medications, care-plan services,
+// competency sign-offs) rather than being medication-specific.
 function TableField({ field, value, onChange }) {
   const rows = Array.isArray(value) ? value : [];
+  const rowLabel = field.rowLabel || "Row";
+  const addLabel = field.addLabel || `Add ${rowLabel.toLowerCase()}`;
+  // Default keeps the original medication layout working unchanged.
+  const wideCols = field.wideColumns || ["name", "notes"];
+
   const update = (i, colId, v) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, [colId]: v } : r));
     onChange(next);
@@ -183,12 +191,12 @@ function TableField({ field, value, onChange }) {
       {rows.map((row, i) => (
         <div className="medrow" key={i}>
           <div className="rh">
-            <span className="rn">Medication {i + 1}</span>
+            <span className="rn">{rowLabel} {i + 1}</span>
             <button type="button" className="del" onClick={() => del(i)} aria-label="Remove"><Icon n="trash" s={15} /></button>
           </div>
           <div className="medgrid">
             {field.columns.map((col) => {
-              const wide = col.id === "name" || col.id === "notes";
+              const wide = wideCols.includes(col.id);
               return (
                 <div className={wide ? "full" : ""} key={col.id}>
                   <span className="mini-l">{col.label}</span>
@@ -207,7 +215,7 @@ function TableField({ field, value, onChange }) {
         </div>
       ))}
       <button type="button" className="addrow" onClick={add}>
-        <Icon n="plus" s={15} /> Add medication
+        <Icon n="plus" s={15} /> {addLabel}
       </button>
     </div>
   );

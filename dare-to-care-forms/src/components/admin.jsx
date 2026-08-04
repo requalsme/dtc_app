@@ -164,6 +164,19 @@ function Templates({ onEdit, onNav, onToast }) {
 
 // ── Upload/Library ─────────────────────────────────────────────────────────
 
+// Order the library sections are shown in: intake first, then the recurring
+// clinical/visit work, then policy. Any category not listed falls to the end.
+const LIBRARY_CATEGORY_ORDER = [
+  "Admission",
+  "Onboarding",
+  "Clinical",
+  "Supervisory",
+  "Visit",
+  "Policy",
+  "Client",
+  "Other",
+];
+
 function Upload({ onImport, onUploadFile }) {
   const [, force] = useState(0);
   const [dragOver, setDragOver] = useState(false);
@@ -214,27 +227,51 @@ function Upload({ onImport, onUploadFile }) {
         </button>
         {fileErr ? <div style={{ color: "var(--red)", fontSize: 12.5, marginTop: 10 }}>{fileErr}</div> : null}
       </div>
-      <div className="ds-navlabel" style={{ padding: "2px 2px 12px" }}>Reference library</div>
-      <div className="upload-grid">
-        {library.map((item) => (
-          <div className="lib-card" key={item.id}>
-            <div className="lh">
-              <div className="pdf-ic"><span className="corner" /></div>
-              <div className="li">
-                <div className="fn">{item.file}</div>
-                <div className="fm">{item.pages} page{item.pages > 1 ? "s" : ""} · {Store.schemaName(item.schemaKey)}</div>
-              </div>
+      <div className="ds-navlabel" style={{ padding: "2px 2px 12px" }}>
+        Reference library
+        <span style={{ color: "var(--ink-3)", fontWeight: 400, marginLeft: 8 }}>
+          {library.filter((i) => i.imported).length} of {library.length} imported
+        </span>
+      </div>
+      {/* Grouped by category — a flat list of 33 forms keyed on filename is
+          impossible to scan, and several share a source PDF. */}
+      {LIBRARY_CATEGORY_ORDER
+        .map((cat) => [cat, library.filter((i) => i.category === cat)])
+        .filter(([, items]) => items.length > 0)
+        .map(([cat, items]) => (
+          <div key={cat} style={{ marginBottom: 22 }}>
+            <div
+              className="section-label"
+              style={{ padding: "0 2px 8px", display: "flex", alignItems: "center", gap: 8 }}
+            >
+              {cat}
+              <span style={{ color: "var(--ink-4)", fontWeight: 400 }}>{items.length}</span>
             </div>
-            <div className="la">
-              {item.imported ? <span className="spill pub">Imported</span> : <span className="spill draft">Ready</span>}
-              <button className="dbtn dbtn-primary" style={{ padding: "7px 13px", fontSize: 12 }} onClick={() => onImport(item)}>
-                <Icon n="sparkle" s={13} />
-                {item.imported ? "Re-open" : "Import & extract"}
-              </button>
+            <div className="upload-grid">
+              {items.map((item) => (
+                <div className="lib-card" key={item.id}>
+                  <div className="lh">
+                    <div className="pdf-ic"><span className="corner" /></div>
+                    <div className="li">
+                      {/* Lead with the form name; the source PDF is provenance. */}
+                      <div className="fn">{item.name}</div>
+                      <div className="fm">
+                        {item.pages} page{item.pages > 1 ? "s" : ""} · {item.file}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="la">
+                    {item.imported ? <span className="spill pub">Imported</span> : <span className="spill draft">Ready</span>}
+                    <button className="dbtn dbtn-primary" style={{ padding: "7px 13px", fontSize: 12 }} onClick={() => onImport(item)}>
+                      <Icon n="sparkle" s={13} />
+                      {item.imported ? "Re-open" : "Import & extract"}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         ))}
-      </div>
     </div>
   );
 }

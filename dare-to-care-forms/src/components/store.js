@@ -231,10 +231,19 @@ export const DTCStore = {
   reset() { clearState(); },
 
   getLibrary() {
-    return referenceLibrary.map((item) => ({
-      ...item,
-      imported: state.templates.some((t) => t.key === item.schemaKey),
-    }));
+    return referenceLibrary.map((item) => {
+      const schema = DTC.schemas[item.schemaKey] || {};
+      return {
+        ...item,
+        // Carried through so the library can lead with the form's name and
+        // group by category — with 33 entries, a flat list keyed on filename
+        // is unreadable.
+        name: schema.name || item.schemaKey,
+        category: schema.category || "Other",
+        description: schema.description || "",
+        imported: state.templates.some((t) => t.key === item.schemaKey),
+      };
+    });
   },
 
   schemaName(schemaKey) {

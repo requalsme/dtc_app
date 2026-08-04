@@ -88,7 +88,14 @@ function normalizeTemplate(t) {
   return { ...t, sections: [] };
 }
 
+// Every form an admin can import and publish. A schema that is missing from
+// this list exists in code but is unreachable from the UI, so anything added to
+// DTC.schemas must be added here too.
+//
+// `file` names the source PDF the schema was transcribed from, so a form can
+// always be traced back to the paper document it has to match.
 const referenceLibrary = [
+  // ── Standalone forms ─────────────────────────────────────────────────────
   { id: "lib_fallRisk", file: "Fall_Risk_Assessment.pdf", pages: 1, schemaKey: "fallRisk" },
   { id: "lib_medList", file: "Medication_List.pdf", pages: 1, schemaKey: "medicationList" },
   { id: "lib_wpv", file: "Workplace_Violence_Policy_Acknowledgement.pdf", pages: 1, schemaKey: "workplaceViolence" },
@@ -96,6 +103,38 @@ const referenceLibrary = [
   { id: "lib_super", file: "Supervisory_Visit_Form.pdf", pages: 1, schemaKey: "supervisoryVisit" },
   { id: "lib_ccpr", file: "Client_Care_Plan_Review.pdf", pages: 1, schemaKey: "clientCarePlanReview" },
   { id: "lib_epp", file: "Emergency_Preparedness_Plan.pdf", pages: 1, schemaKey: "emergencyPreparedness" },
+  { id: "lib_carePlan", file: "Client Admission Packet.pdf (p.15-16)", pages: 2, schemaKey: "clientCarePlan" },
+
+  // ── New Hire Packet (30pp, 2026-07-27) ───────────────────────────────────
+  { id: "lib_jd_home", file: "New Hire Packet.pdf (p.5)", pages: 1, schemaKey: "homemakerJobDescription" },
+  { id: "lib_jd_pcw", file: "New Hire Packet.pdf (p.6)", pages: 1, schemaKey: "pcwJobDescription" },
+  { id: "lib_jd_ihss", file: "New Hire Packet.pdf (p.7-8)", pages: 2, schemaKey: "ihssAttendantJobDescription" },
+  { id: "lib_orient", file: "New Hire Packet.pdf (p.9-10)", pages: 2, schemaKey: "orientationChecklist" },
+  { id: "lib_avail", file: "New Hire Packet.pdf (p.10-11)", pages: 2, schemaKey: "caregiverAvailability" },
+  { id: "lib_rules", file: "New Hire Packet.pdf (p.12-13)", pages: 2, schemaKey: "rulesOfTheRoad" },
+  { id: "lib_handbook", file: "New Hire Packet.pdf (p.13-14)", pages: 2, schemaKey: "employeeHandbookAck" },
+  { id: "lib_policies", file: "New Hire Packet.pdf (p.14-15)", pages: 2, schemaKey: "policiesReceipt" },
+  { id: "lib_scope", file: "New Hire Packet.pdf (p.16-18)", pages: 3, schemaKey: "careScopeAndTasks" },
+  { id: "lib_missed", file: "New Hire Packet.pdf (p.22)", pages: 1, schemaKey: "missedVisitsPolicy" },
+  { id: "lib_flu", file: "New Hire Packet.pdf (p.23)", pages: 1, schemaKey: "fluVaccineStatement" },
+  { id: "lib_comp", file: "New Hire Packet.pdf (p.27-29)", pages: 3, schemaKey: "competencyValidation" },
+
+  // ── Client Admission Packet (29pp, 2026-07-27) ───────────────────────────
+  { id: "lib_welcome", file: "Client Admission Packet.pdf (p.4)", pages: 1, schemaKey: "welcomeLetter" },
+  { id: "lib_agreement", file: "Client Admission Packet.pdf (p.5-8)", pages: 4, schemaKey: "homeCareServicesAgreement" },
+  { id: "lib_assess", file: "Client Admission Packet.pdf (p.9-13)", pages: 5, schemaKey: "clientAssessment" },
+  { id: "lib_rights", file: "Client Admission Packet.pdf (p.17)", pages: 1, schemaKey: "consumerRights" },
+  { id: "lib_disclosure", file: "Client Admission Packet.pdf (p.18)", pages: 1, schemaKey: "agencyDisclosure" },
+  { id: "lib_conf", file: "Client Admission Packet.pdf (p.20)", pages: 1, schemaKey: "consumerConfidentiality" },
+  { id: "lib_hipaa", file: "Client Admission Packet.pdf (p.21-23)", pages: 3, schemaKey: "privacyPracticesNotice" },
+  { id: "lib_advdir", file: "Client Admission Packet.pdf (p.25)", pages: 1, schemaKey: "advanceDirectivesNotice" },
+  { id: "lib_billing", file: "Client Admission Packet.pdf (p.26)", pages: 1, schemaKey: "financialBillingNotice" },
+  { id: "lib_eppclient", file: "Client Admission Packet.pdf (p.27-28)", pages: 2, schemaKey: "eppClientInfo" },
+
+  // ── Client portal ────────────────────────────────────────────────────────
+  { id: "lib_cec", file: "Emergency_Contacts.pdf", pages: 1, schemaKey: "clientEmergencyContacts" },
+  { id: "lib_ccp", file: "Care_Preferences.pdf", pages: 1, schemaKey: "clientCarePreferences" },
+  { id: "lib_csat", file: "Satisfaction_Survey.pdf", pages: 1, schemaKey: "clientSatisfaction" },
 ];
 
 const state = {

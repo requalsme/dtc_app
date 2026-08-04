@@ -71,6 +71,7 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
   const [assignedToId, setAssignedToId] = useState("");
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [priority, setPriority] = useState("normal");
+  const [recurrence, setRecurrence] = useState("");
   const [startingWizard, setStartingWizard] = useState(false);
 
   const officeTemplates = Store.getPublishedTemplates
@@ -94,6 +95,11 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
       assignedToName: caregiver?.name || "Office Manager",
       dueDate,
       priority,
+      status: "pending",
+      // When set, completing this task automatically schedules the next one.
+      // This is what makes "supervisory visit every 90 days" and "care plan
+      // yearly" hold without anyone remembering to re-create them.
+      recurrence: recurrence || null,
     });
 
     onToast("Task created");
@@ -165,6 +171,21 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
               <option value="normal">Normal</option>
               <option value="low">Low</option>
             </select>
+          </div>
+          <div className="form-row">
+            <label className="form-label" htmlFor="sf-recur">Repeat</label>
+            <select id="sf-recur" className="ds-select" value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+              <option value="">Does not repeat</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Every 90 days</option>
+              <option value="semiannual">Every 6 months</option>
+              <option value="annual">Yearly</option>
+            </select>
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>
+              {recurrence
+                ? "Completing this task automatically schedules the next one."
+                : "Supervisory visits repeat every 90 days; care plans yearly."}
+            </div>
           </div>
         </div>
         <div className="modal-foot">

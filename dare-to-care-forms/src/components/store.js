@@ -94,6 +94,40 @@ function normalizeTemplate(t) {
 //
 // `file` names the source PDF the schema was transcribed from, so a form can
 // always be traced back to the paper document it has to match.
+// Advance a due date by one recurrence interval. Counted from the date the task
+// was DUE, not the date it was completed, so a visit done late doesn't quietly
+// push the whole schedule later and drift out of compliance.
+function nextDueDate(fromISO, recurrence) {
+  if (!fromISO || !recurrence) return null;
+  const d = new Date(fromISO + (fromISO.length === 10 ? "T00:00:00" : ""));
+  if (Number.isNaN(d.getTime())) return null;
+
+  switch (recurrence) {
+    case "monthly": d.setMonth(d.getMonth() + 1); break;
+    case "quarterly": d.setDate(d.getDate() + 90); break;   // 90 days, per the Care Plan
+    case "semiannual": d.setMonth(d.getMonth() + 6); break;
+    case "annual": d.setFullYear(d.getFullYear() + 1); break;
+    default: return null;
+  }
+
+  // If the task was completed so late that the next date is already in the
+  // past, roll forward to the next future occurrence rather than creating a
+  // task that is born overdue.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let guard = 0;
+  while (d < today && guard < 60) {
+    switch (recurrence) {
+      case "monthly": d.setMonth(d.getMonth() + 1); break;
+      case "quarterly": d.setDate(d.getDate() + 90); break;
+      case "semiannual": d.setMonth(d.getMonth() + 6); break;
+      case "annual": d.setFullYear(d.getFullYear() + 1); break;
+      default: return null;
+    }
+    guard++;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 const referenceLibrary = [
   // ── Standalone forms ─────────────────────────────────────────────────────
   { id: "lib_fallRisk", file: "Fall_Risk_Assessment.pdf", pages: 1, schemaKey: "fallRisk" },
@@ -499,6 +533,31 @@ export const DTCStore = {
 
   async updateTask(id, patch) {
     await updateDoc(doc(db, "tasks", id), patch);
+
+    // Recurring compliance: completing a repeating task schedules the next one.
+    // Without this, "supervisory visit every 90 days" and "care plan yearly"
+    // fire exactly once and then silently stop — which is the failure mode a
+    // survey would catch.
+    if (patch.status === "completed") {
+      const task = state.tasks.find((t) => t.id === id);
+      if (task?.recurrence) {
+        const next = nextDueDate(task.dueDate, task.recurrence);
+        if (next) {
+          const { id: _drop, completedAt: _c, ...carry } = task;
+          await addDoc(collection(db, "tasks"), {
+            ...carry,
+            status: "pending",
+            dueDate: next,
+            // Points back at the occurrence that generated this one, so the
+            // chain is auditable rather than looking like duplicate tasks.
+            previousTaskId: id,
+            createdAt: new Date().toISOString(),
+          });
+          await logAudit("recurring_task_scheduled", task.title, next);
+        }
+      }
+    }
+
     await refresh();
     return { id, ...patch };
   },

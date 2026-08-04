@@ -179,6 +179,10 @@ const state = {
   users: [],
   tasks: [],
   certificates: [],
+  // Documents that arrived from outside the app and have not been filed yet.
+  // Only office managers and admins can read these, so for everyone else this
+  // stays empty — see the `inbound` rule in firestore.rules.
+  inbound: [],
   user: null, // Track current user manually from AuthContext if needed
 };
 
@@ -196,6 +200,7 @@ function clearState() {
   state.users = [];
   state.tasks = [];
   state.certificates = [];
+  state.inbound = [];
   emit();
 }
 
@@ -222,8 +227,12 @@ async function refresh() {
     requests.push(fetchCollection("users"));
     // Certificates are written by the course site; collection may be empty/absent.
     requests.push(fetchCollection("certificates").catch(() => []));
+    // The ingestion queue is office-manager-and-above. For a caregiver this
+    // read is denied by the rules, which is the intended answer — swallow it so
+    // one restricted collection doesn't fail their whole refresh.
+    requests.push(fetchCollection("inbound").catch(() => []));
 
-    const [templates, clients, submissions, tasks, audit, users, certificates] = await Promise.all(requests);
+    const [templates, clients, submissions, tasks, audit, users, certificates, inbound] = await Promise.all(requests);
     state.templates = (templates || []).map(normalizeTemplate);
     state.clients = clients;
     state.submissions = submissions;
@@ -231,6 +240,7 @@ async function refresh() {
     state.audit = audit;
     state.users = users;
     state.certificates = certificates || [];
+    state.inbound = inbound || [];
 
     // Find current user profile
     state.user = users.find(u => u.id === user.uid) || null;
@@ -614,6 +624,70 @@ export const DTCStore = {
     await logAudit("client_updated", state.clients.find((c) => c.id === id)?.name || id);
     await refresh();
     return { id, ...patch };
+  },
+
+  // ─── Inbound review queue ────────────────────────────────────────────────
+  // Documents that arrived from outside the app — emailed authorizations,
+  // certification results, imported GoFormz records. The ingestion function
+  // proposes who each one belongs to; a person decides.
+  //
+  // Both actions go through callable functions rather than writing Firestore
+  // directly. Filing a document has to copy the object into the person's file,
+  // create the submission record and write the audit entry as one server-side
+  // step — a browser that could mark an entry "filed" on its own could leave
+  // the record saying one thing and the filing cabinet another.
+
+  getInbound() { return state.inbound.slice(); },
+
+  // Newest first. Ambiguous and unmatched entries are the ones a person has to
+  // think about, so they sort above the ones that only need a confirming click.
+  getPendingInbound() {
+    const rank = { ambiguous: 0, unmatched: 1, weak: 2, confident: 3 };
+    return state.inbound
+      .filter((d) => d.status === "pending")
+      .sort(
+        (a, b) =>
+          (rank[a.confidence] ?? 9) - (rank[b.confidence] ?? 9) ||
+          String(b.queuedAt || "").localeCompare(String(a.queuedAt || "")),
+      );
+  },
+
+  async resolveInbound(inboundId, subjectType, subjectId) {
+    const { getFunctions, httpsCallable } = await import("firebase/functions");
+    const call = httpsCallable(getFunctions(), "resolveInboundDocument");
+    const res = await call({ inboundId, subjectType, subjectId });
+    await refresh();
+    return res.data;
+  },
+
+  async dismissInbound(inboundId, reason) {
+    const { getFunctions, httpsCallable } = await import("firebase/functions");
+    const call = httpsCallable(getFunctions(), "dismissInboundDocument");
+    const res = await call({ inboundId, reason });
+    await refresh();
+    return res.data;
+  },
+
+  // Everyone a document could be filed against, in one list, tagged with which
+  // filing cabinet they belong to. The picker needs both rosters together:
+  // Debra Hardman is a client and Dean Hardman is a caregiver, and a reviewer
+  // choosing between them is choosing between two different files.
+  rosterForFiling() {
+    const clients = state.clients.map((c) => ({
+      id: c.id,
+      name: c.name,
+      subjectType: "client",
+      detail: c.city || "",
+    }));
+    const staff = state.users
+      .filter((u) => u.name && u.role !== "client")
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        subjectType: "staff",
+        detail: ROLE_LABEL(u.role),
+      }));
+    return [...clients, ...staff].sort((a, b) => a.name.localeCompare(b.name));
   },
 
   // Certificates (written by the course site; auto-linked to a user by email)

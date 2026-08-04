@@ -6,6 +6,11 @@
   "storage": {
     "rules": "storage.rules"
   },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs22",
+    "ignore": ["node_modules", ".git", "test", "*.log"]
+  },
   "hosting": {
     "public": "dare-to-care-forms/dist",
     "ignore": [

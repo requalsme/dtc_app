@@ -74,10 +74,15 @@ export function classify(input = {}) {
   // a subject line of "Re: Fw: documents". Body text is checked last and only
   // its opening, because long signature blocks and disclaimers produce false
   // positives ("certified mail", "background" in a footer).
+  // Underscores are word characters, so `\bcbi\b` does not match "CBI_result".
+  // Filenames are full of them — "CBI_result_Ameen.pdf", "T Phillips_Client
+  // Care Plan" — so separators are flattened to spaces before any rule runs.
+  const flatten = (s) => String(s || "").replace(/[_\-.]+/g, " ");
+
   const haystacks = [
-    ["fileName", input.fileName || ""],
-    ["subject", input.subject || ""],
-    ["body", (input.body || "").slice(0, 500)],
+    ["fileName", flatten(input.fileName)],
+    ["subject", flatten(input.subject)],
+    ["body", flatten((input.body || "").slice(0, 500))],
   ];
 
   for (const rule of RULES) {

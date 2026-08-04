@@ -37,6 +37,11 @@ const navByRole: Record<Role, NavItem[]> = {
   officeManager: [
     { to: "/office-manager", label: "Dashboard", icon: "grid" },
     { to: "/office-manager/submissions", label: "Submissions", icon: "inbox" },
+    // Documents that arrived from outside the app and are not on anyone's
+    // record yet. Sits next to Submissions because it is the same job —
+    // deciding what a document is and where it belongs — just from the other
+    // direction.
+    { to: "/office-manager/inbound", label: "Inbound", icon: "upload" },
     { to: "/office-manager/clients", label: "Clients", icon: "clients" },
     { to: "/office-manager/new-hires", label: "New hires", icon: "checkCircle" },
     { to: "/office-manager/team", label: "Team", icon: "users" },
@@ -160,17 +165,20 @@ function NavIcon({ name }: { name: string }) {
 }
 
 function useBadgeCounts(role: Role, userId: string) {
-  const [counts, setCounts] = useState({ corrections: 0, pendingReview: 0, queued: 0 });
+  const [counts, setCounts] = useState({ corrections: 0, pendingReview: 0, queued: 0, inbound: 0 });
   useEffect(() => {
     const update = () => {
       const subs = Store.getSubmissions();
       const queued = Store.getQueuedSubmissions?.() ?? [];
+      // Only office managers and admins can read the ingestion queue, so for
+      // everyone else this is empty and the badge never appears.
+      const inbound = Store.getPendingInbound?.().length ?? 0;
       if (role === "caregiver") {
         const corrections = subs.filter((s: any) => s.caregiverId === userId && s.status === "needsCorrection").length;
-        setCounts({ corrections, pendingReview: 0, queued: queued.length });
+        setCounts({ corrections, pendingReview: 0, queued: queued.length, inbound: 0 });
       } else {
         const pendingReview = subs.filter((s: any) => s.status === "submitted").length;
-        setCounts({ corrections: 0, pendingReview, queued: 0 });
+        setCounts({ corrections: 0, pendingReview, queued: 0, inbound });
       }
     };
     const unsub = Store.subscribe(update);
@@ -329,6 +337,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               badge = badges.corrections;
             } else if (item.label === "Submissions") {
               badge = badges.pendingReview;
+            } else if (item.label === "Inbound") {
+              badge = badges.inbound;
             }
 
             // Course site: hand the user off with a one-time token (no second login).

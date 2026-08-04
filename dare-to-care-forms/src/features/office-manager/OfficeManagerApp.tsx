@@ -10,6 +10,7 @@ import { OfficeDashboard } from "./OfficeDashboard";
 import { FiledDocuments } from "../../components/FiledDocuments";
 import { ClientKeyFacts } from "../../components/ClientKeyFacts";
 import { NewHireReview } from "./NewHireReview";
+import { InboundQueue } from "./InboundQueue";
 import { fmtDate } from "../../utils/format";
 
 const relTime = (iso: string) => {
@@ -702,10 +703,11 @@ export function OfficeManagerApp({ page, onToast }: { page: string; onNav: (p: s
       {page === "submissions" && <SubmissionsList onView={setViewingSubmission} />}
       {page === "clients" && <ClientDirectory />}
       {page === "new-hires" && <NewHireReview onToast={onToast} />}
+      {page === "inbound" && <InboundQueue onToast={onToast} />}
       {page === "team" && <TeamDirectory />}
       {page === "audit" && <AuditView />}
       {page === "dashboard" && <OfficeDashboard onStartForm={() => setShowStartForm(true)} />}
-      {!["submissions", "clients", "new-hires", "team", "audit", "dashboard"].includes(page) && (
+      {!["submissions", "clients", "new-hires", "inbound", "team", "audit", "dashboard"].includes(page) && (
         <OfficeDashboard onStartForm={() => setShowStartForm(true)} />
       )}
     </>

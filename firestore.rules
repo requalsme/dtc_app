@@ -31,6 +31,15 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // Ingestion state — the Outlook watermark and last-poll result. Written
+    // only by the scheduled function through the admin SDK, which bypasses
+    // these rules; no browser has any business moving the watermark, because
+    // moving it forwards silently skips unread referrals.
+    match /metadata/ingestion {
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create, update: if isSelf(userId) || isAdmin();
@@ -72,6 +81,25 @@ service cloud.firestore {
 
       // Signed records are never destroyed. Corrections supersede; they don't erase.
       allow delete: if false;
+    }
+
+    // Documents that arrived from outside the app — emailed authorizations,
+    // certification results, imported GoFormz records — waiting for a human to
+    // say who they belong to.
+    //
+    // Read is office-manager-and-above, not any signed-in user: an unreviewed
+    // queue is a pile of other people's clinical documents with no filing
+    // decision made yet, and a caregiver has no reason to browse it.
+    //
+    // Writes are closed entirely. Entries are created by the ingestion function
+    // and resolved by the resolveInboundDocument / dismissInboundDocument
+    // callables, both of which run with admin privileges and re-check the
+    // caller's role. Keeping the browser out means a reviewer cannot mark a
+    // document filed without the server also copying it into the person's file
+    // and writing the audit entry — the record and the reality stay together.
+    match /inbound/{inboundId} {
+      allow read: if isStaff();
+      allow write: if false;
     }
 
     match /tasks/{taskId} {

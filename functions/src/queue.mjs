@@ -7,6 +7,8 @@
 // Storing the source matters as much as the matching: a surveyor asking for
 // evidence wants the CBI result PDF, not a row that says "passed".
 
+import { randomUUID } from "node:crypto";
+
 import { classify } from "./classify.mjs";
 import { matchName } from "./matcher.mjs";
 
@@ -72,18 +74,28 @@ export async function enqueue(ctx, item) {
   // Store the source document under the queue entry's own id, so the object and
   // the record can never drift apart.
   let sourcePath = null;
+  let sourceUrl = null;
   if (item.content) {
     sourcePath = `${INBOUND_PREFIX}/${ref.id}/${sanitize(item.fileName)}`;
+    // Objects written by the admin SDK have no download token, and without one
+    // the browser SDK's getDownloadURL can't produce a link. Minting the token
+    // here means the reviewer can open the document without the app needing
+    // storage read permissions it otherwise wouldn't use.
+    const token = randomUUID();
     await bucket.file(sourcePath).save(item.content, {
       contentType: item.contentType || "application/octet-stream",
       resumable: false,
       metadata: {
         metadata: {
+          firebaseStorageDownloadTokens: token,
           source: item.source,
           dedupeKey: item.dedupeKey,
         },
       },
     });
+    sourceUrl =
+      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+      `${encodeURIComponent(sourcePath)}?alt=media&token=${token}`;
   }
 
   const record = {
@@ -105,6 +117,7 @@ export async function enqueue(ctx, item) {
     candidates: match.candidates,
 
     sourcePath,
+    sourceUrl,
     status: "pending",
     queuedAt: new Date().toISOString(),
   };

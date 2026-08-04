@@ -66,6 +66,52 @@ certification results, file them against the right person.
 owner interview, including a mistake I made and fixed (there is only one
 Tolliver; the other name was a musician the speakers joked about).
 
+## Built — the matcher and the review queue
+
+`functions/` holds the ingestion pipeline; see `functions/README.md` for the
+Graph app registration and deploy steps. 44 tests pass, `tsc` clean.
+
+The queue is the shared core, not just the email agent's plumbing: the 77-item
+certification backfill and the 126 GoFormz records go through the same
+`enqueue()` and land in the same screen. Reviewed at
+**Office Manager → Inbound**, which is office-manager-and-above only.
+
+**The rosters are more dangerous than this document said.** The collisions
+recorded above are all *within* the staff roster. The ones that actually decide
+which filing cabinet a document lands in span the two rosters, and nobody had
+written them down:
+
+| Text | Could be | |
+|---|---|---|
+| `D Hardman` | Debra Hardman | **client** |
+| | Dean Hardman | **staff** |
+| `Carbajal` / `Carabajal` | Flora Carbajal | **client** |
+| | Ernest Carabajal | **staff** |
+| `Rodriguez` | Angelina / Nevaeh | client / staff |
+| `Richardson` | William / Faith | client / staff |
+| `Vuong` | Long / Vidia | client / staff |
+| `Hunter` | Deonshay / Frances | two clients |
+| `Coria` | Liborio Coria / Lovenus Ruiz-Coria | two staff |
+
+So `matchName` returns a confidence, never an answer. A tie spanning the two
+rosters is forced to `ambiguous` on a wider margin than a same-roster tie, and
+only a full first-and-last-name match is ever pre-selected in the UI. Surname
+plus an initial — 53 of the 126 GoFormz records — is suggested and never
+defaulted.
+
+Every resolution records whether the reviewer took the suggestion or overrode it
+(`resolutionKind`). That's the only honest read on whether the matcher works,
+and it's free to capture now and impossible to reconstruct later.
+
+**Blocked on you:** Cloud Functions need the **Blaze** plan, and the Graph app
+registration needs `Mail.Read` scoped to the one mailbox with an application
+access policy — unscoped, that credential reads every mailbox in the tenant.
+
+**Not started:** the Outlook poll is written but has never run against a real
+mailbox; the certification backfill and GoFormz import still need writing on top
+of `enqueue()`; the pre-billing code-mismatch check needs CareTime service codes,
+which are **not** in `migration/*.json` — the roster extract doesn't carry them.
+
 Facts that will save you time:
 
 - **CareTime holds zero documents for all 50 people.** Compliance evidence lives

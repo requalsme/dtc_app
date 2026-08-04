@@ -38,6 +38,24 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Documents that arrived from outside the app and have not been filed yet:
+    // emailed authorizations, certification results, GoFormz exports. Held here
+    // exactly as they arrived, under the unguessable id of their queue entry.
+    //
+    // Nothing writes here from a browser. The ingestion function stores them
+    // through the admin SDK, and filing copies rather than moves — so the
+    // original stays put and a mis-filing can be traced back to the document
+    // the reviewer was actually looking at.
+    //
+    // Read is gated the same way as filed/ and for the same reason: Storage
+    // rules cannot read Firestore roles. The Firestore `inbound` records that
+    // carry these paths ARE restricted to office managers and above, so there
+    // is no route to a path without already being able to see the queue.
+    match /inbound/{inboundId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // Training videos: readable by signed-in staff, managed from the console.
     match /courses/{allPaths=**} {
       allow read: if isSignedIn();

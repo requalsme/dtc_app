@@ -116,13 +116,35 @@ checks) → then training.
 
 ---
 
-## One security issue worth fixing regardless
+## Training gate — done, with one path deliberately left open
 
-The course site authenticates with **anonymous Firebase auth plus a rotating
-access code** (`RRC3` in `access-config.js`). Anyone with the URL and code
-reaches the courses no matter what the DTC app says. The release gate is real
-inside the app but **not enforced on the course site itself**. If the gate is
-meant to be genuine, the course site needs to check the handoff token.
+The gate is now enforced at four independent points rather than only in the UI:
 
-Separately: a GitHub personal access token is committed in plaintext in
-`.git/config`. Worth revoking at github.com/settings/tokens.
+1. `createCourseHandoff` won't mint a token for a `newHire` without
+   `coursesUnlockedAt` — this is the credential the course site trusts.
+2. Firestore rules block creating the handoff document at all in that case, so
+   calling Firestore directly doesn't help. The client check is convenience;
+   this is the boundary.
+3. The course site verifies `role` and `coursesUnlockedAt` off the handoff
+   rather than trusting whoever opened the link.
+4. Handoffs expire after 10 minutes — one hop from app to course site, not a
+   durable key.
+
+**Still open on purpose:** the name + DOB + shared access code path on the
+course site. A code can be passed to someone whose training hasn't been
+released, and nothing on that site can tell the difference — so this is the
+remaining hole.
+
+It stays open because existing caregivers use it for annual refreshers today.
+`DTC_ACCESS.requireAppSignIn` in `dtccourses/access-config.js` is the switch:
+set it to `true` and the code form disappears, leaving app handoff as the only
+way in. **Precondition: every caregiver who takes courses needs an app account
+first**, or they're locked out of their own annual training. That's the
+long-term intent, not a today change.
+
+Note `dtccourses` is a separate repo with its own Netlify deploy.
+
+## Also worth doing
+
+A GitHub personal access token is committed in plaintext in `.git/config` in
+both repos. Worth revoking at github.com/settings/tokens.

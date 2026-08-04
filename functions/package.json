@@ -1,0 +1,20 @@
+{
+  "name": "dtc-functions",
+  "description": "Ingestion for Dare to Care — pulls documents out of Outlook, matches them to a person, and queues them for a human to file.",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.0"
+  }
+}

@@ -639,12 +639,26 @@ export const DTCStore = {
   async createCourseHandoff() {
     const me = state.user;
     if (!me) return null;
+
+    // A new hire may only reach training after an office manager has released
+    // it. Enforced here as well as in the portal UI, because this function is
+    // what actually mints the credential the course site trusts — refusing at
+    // the source means a hidden button can't be worked around.
+    if (me.role === "newHire" && !me.coursesUnlockedAt) return null;
+
     const token = `h_${me.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     await setDoc(doc(db, "courseHandoffs", token), {
       uid: me.id,
       name: me.name || "",
       email: (me.email || "").toLowerCase(),
+      role: me.role || "",
+      // Carried so the course site can verify release itself rather than
+      // trusting that whoever opened the link was allowed to.
+      coursesUnlockedAt: me.coursesUnlockedAt || null,
       createdAt: new Date().toISOString(),
+      // Short-lived: a handoff is for one hop from the app to the course site,
+      // not a durable key someone can save and reuse later.
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     });
     return token;
   },

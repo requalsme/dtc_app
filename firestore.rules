@@ -96,9 +96,23 @@ service cloud.firestore {
     // One-time identity handoff tokens (app -> course site). A signed-in app user
     // creates a token for themselves; the course site reads it to sign the user in
     // without a second login. Not updatable or deletable.
+    // One-time identity handoff, app -> course site. The course site reads these
+    // anonymously, which is why the token is unguessable and short-lived.
     match /courseHandoffs/{token} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+
+      // A handoff may only be minted for yourself, and a new hire may only mint
+      // one once training has been released for them. Enforced here as well as
+      // in the client so the gate can't be bypassed by calling Firestore
+      // directly — the client check is convenience, this is the boundary.
+      allow create: if isSignedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && (
+                         userRole() != 'newHire'
+                         || get(/databases/$(database)/documents/users/$(request.auth.uid))
+                              .data.coursesUnlockedAt != null
+                       );
+
       allow update, delete: if false;
     }
 

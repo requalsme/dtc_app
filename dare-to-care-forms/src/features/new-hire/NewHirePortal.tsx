@@ -152,6 +152,42 @@ export default function NewHirePortal() {
   const coursesReleased = !!(user as any)?.coursesUnlockedAt;
   const coursesUnlocked = paperworkDone && coursesReleased;
 
+  const coursesDone = TRAINING_MODULES.every((m) => passedCourseIds.has(m.id));
+  const coursesRemaining = TRAINING_MODULES.filter((m) => !passedCourseIds.has(m.id)).length;
+  const formsRemaining = NEW_HIRE_FORM_KEYS.filter((k) => !filedFormKeys.has(k)).length;
+
+  // Exactly one message, always present, describing whose move it is now.
+  const nextStep: { title: string; detail: string; waiting?: boolean } = (() => {
+    if (!paperworkDone) {
+      return {
+        title: `Next: finish your paperwork — ${formsRemaining} form${formsRemaining === 1 ? "" : "s"} left`,
+        detail:
+          "Work through the forms below. They're the New Hire Packet — job description, policies, and acknowledgements. You can stop and come back; each one saves when you submit it.",
+      };
+    }
+    if (!coursesReleased) {
+      return {
+        title: "Waiting on your office manager",
+        detail:
+          "Your paperwork is complete and has gone to your office manager to check over. Once they've reviewed it they'll release your training courses, and this page will update on its own. Nothing else is needed from you right now.",
+        waiting: true,
+      };
+    }
+    if (!coursesDone) {
+      return {
+        title: `Next: complete your training — ${coursesRemaining} course${coursesRemaining === 1 ? "" : "s"} left`,
+        detail:
+          "Your training has been released. Open each course below; your certificate comes back here automatically when you pass, so there's nothing to send in.",
+      };
+    }
+    return {
+      title: "All done — waiting to be verified",
+      detail:
+        "Your paperwork and all of your course certificates are in. Your office manager reviews them and confirms your hire. Once they do, you'll move to the caregiver portal automatically. Nothing further is needed from you.",
+      waiting: true,
+    };
+  })();
+
   const isStepDone = (step: any) => {
     if (step.id === "welcome") return true; // orientation is informational; nothing to file
     if (step.training) return passedCourseIds.has(step.id);
@@ -194,6 +230,22 @@ export default function NewHirePortal() {
         <p>
           We're glad you're here. Complete each step below at your own pace — you'll have full access to the caregiver portal once your onboarding is finished.
         </p>
+      </div>
+
+      {/* What happens next. A new hire should never be looking at a screen with
+          nothing actionable and no explanation — especially in the two waiting
+          states, where the next move belongs to the office manager and not to
+          them. */}
+      <div
+        className="card"
+        style={{
+          padding: "14px 16px",
+          marginBottom: 16,
+          borderLeft: `3px solid ${nextStep.waiting ? "var(--amber)" : "var(--accent)"}`,
+        }}
+      >
+        <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 3 }}>{nextStep.title}</div>
+        <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{nextStep.detail}</div>
       </div>
 
       {/* Progress */}

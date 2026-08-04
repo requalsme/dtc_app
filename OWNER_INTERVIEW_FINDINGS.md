@@ -1,8 +1,31 @@
 # Owner interview — findings from the raw transcript
 
-_Source: "New Recording 7.m4a" (owner + Raina). Taken from the verbatim NotebookLM
-source transcript, not its generated summaries — several of the decisions below
-never appeared in the summaries._
+_Source: "New Recording 7.m4a" — **Rejane Tisby** (owner) and Raina. Taken from the
+verbatim NotebookLM source transcript, not its generated summaries — several of the
+decisions below never appeared in the summaries._
+
+## Who "the owner" is
+
+**Rejane Tisby is the owner of Dare to Care.** She appears in the CareTime staff
+roster as `caretimeId 205695`, title **Administrator**, `r3cbranch@msn.com` — which
+the migration maps to the `admin` role. That's the right level of access, but the
+title alone doesn't say she owns the agency, so it's recorded here.
+
+Two consequences worth carrying into any fork:
+
+- **She is also the service coordinator on 11 of the 30 clients** — Archuleta,
+  Carbajal, Coffey, Embry, Hardman, Henderson, Phillips, Robinson, Rodriguez,
+  Sisneros, Vuong. Anything that routes work to a coordinator routes a third of the
+  caseload to her.
+- **`Kevan Tisby` (`205701`, Assistant administrator) shares her surname.** So a
+  document that says only "Tisby" is genuinely ambiguous between the owner and the
+  assistant administrator, both of whom are `admin`. Never resolve "Tisby" on
+  surname alone.
+
+Named in the transcript as governing body: Raina, "Rashan", "Kevin". "Kevin" is
+almost certainly Kevan Tisby; "Rashan" is likely Rushane Harris. Both spellings are
+transcription artifacts and are left unaltered below rather than silently corrected —
+confirm before treating either as an identity match.
 
 ## Decisions the owner actually made on the call
 
@@ -31,7 +54,7 @@ assistant administrator · office manager · marketing director · scheduling
 supervisor · **support personnel** · HR/finance director · caregiver · personal
 care provider · consumer
 
-Current coverage: owner/administrator/HCA = the owner. Governing body = owner,
+Current coverage: owner/administrator/HCA = Rejane Tisby. Governing body = owner,
 Raina, Rashan, Kevin. Scheduling + support personnel = Rashan. HR/finance = Raven.
 Marketing = the owner. **Support personnel is the acknowledged gap** — and it's
 vague by nature: _"basically it's just all additional duties."_ The owner's own

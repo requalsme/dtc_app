@@ -103,9 +103,25 @@ Every resolution records whether the reviewer took the suggestion or overrode it
 (`resolutionKind`). That's the only honest read on whether the matcher works,
 and it's free to capture now and impossible to reconstruct later.
 
-**Blocked on you:** Cloud Functions need the **Blaze** plan, and the Graph app
-registration needs `Mail.Read` scoped to the one mailbox with an application
-access policy — unscoped, that credential reads every mailbox in the tenant.
+**It runs on the free tier.** This was Firebase Cloud Functions first, which
+need the paid Blaze plan for what is one cron job and two form posts. It now
+deploys as Netlify functions alongside the app — a 15-minute poll is ~2,900
+invocations a month against a 125,000 allowance. `functions/` is a plain
+library with no hosting SDK in it; `netlify/functions/` holds the three entry
+points, and a GitHub Actions cron would be a drop-in replacement.
+
+The cost is execution time: free-tier functions get a short window, so the poll
+works to a wall-clock budget and stops politely rather than being killed
+mid-attachment. The watermark only advances past messages that were fully
+handled, so an interrupted run costs minutes, not a referral.
+
+**Blocked on you:** the Netlify environment variables (a Firebase
+service-account key and the Graph credential — see `functions/README.md`), and
+`Mail.Read` scoped to the one mailbox with an application access policy.
+Unscoped, that credential reads every mailbox in the tenant.
+
+**Worth checking:** Firebase Storage itself may require Blaze on projects
+created after ~Oct 2024. If `filed/` PDFs already work, this is moot.
 
 **Not started:** the Outlook poll is written but has never run against a real
 mailbox; the certification backfill and GoFormz import still need writing on top
@@ -121,7 +137,11 @@ Facts that will save you time:
 - **Referrals are wildly inconsistent** — some are structured DCSC documents,
   some are one-line "call this person" emails with no attachment.
 - **Real surname collisions:** Harris (Rushane/Yvonne), Martinez (Louisa/Mark),
-  Tisby (Kevan/Rejane). Never auto-resolve on surname alone.
+  Tisby (Kevan/Rejane). Never auto-resolve on surname alone. **Tisby is the worst
+  one:** Rejane Tisby is the *owner of the agency* and Kevan Tisby is the assistant
+  administrator. Both are `admin`, so a wrong match here misfiles against the owner's
+  own record. She is also service coordinator on 11 of the 30 clients — see
+  `OWNER_INTERVIEW_FINDINGS.md`.
 - **Denied claims are NOT in CareTime.** Its "Billing Issues Report" only covers
   payer config and is empty. Denials live in an external system.
 - **The real cause of denials is a code mismatch** between the client record and

@@ -12,6 +12,8 @@ interface NavItem {
   icon: string;
   external?: boolean;
   courseHandoff?: boolean;
+  /** Only shown once an office manager has released training for this user. */
+  needsCourseAccess?: boolean;
 }
 
 const navByRole: Record<Role, NavItem[]> = {
@@ -36,13 +38,16 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: "/office-manager", label: "Dashboard", icon: "grid" },
     { to: "/office-manager/submissions", label: "Submissions", icon: "inbox" },
     { to: "/office-manager/clients", label: "Clients", icon: "clients" },
+    { to: "/office-manager/new-hires", label: "New hires", icon: "checkCircle" },
     { to: "/office-manager/team", label: "Team", icon: "users" },
     { to: "/office-manager/audit", label: "Audit log", icon: "clock" },
     { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true },
   ],
   newHire: [
     { to: "/new-hire", label: "Onboarding", icon: "home" },
-    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true },
+    // Hidden until an office manager releases training for this person. Courses
+    // are the last step before being hired on, so they are not self-serve.
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true, needsCourseAccess: true },
   ],
   client: [
     { to: "/client", label: "My Forms", icon: "file" },
@@ -255,7 +260,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const isPreviewMode = user.role === "admin" && effectiveRole !== "admin" && effectiveRole !== null;
   const displayRole = (effectiveRole ?? user.role) as Role;
-  const items = navByRole[displayRole] || [];
+  const items = (navByRole[displayRole] || []).filter((item) => {
+    // A new hire only sees the courses link once training has been released.
+    if (!item.needsCourseAccess) return true;
+    return !!(user as any)?.coursesUnlockedAt;
+  });
 
   // Hand the logged-in user into the course site without a second sign-in.
   // Open the tab synchronously (so it isn't popup-blocked), then redirect it to

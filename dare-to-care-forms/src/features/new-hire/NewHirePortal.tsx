@@ -7,8 +7,37 @@ import { Icon } from "../../components/fields";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate } from "../../utils/format";
 
-// Real acknowledgement forms new hires must complete (verbatim schemas).
-const NEW_HIRE_FORM_KEYS = ["workplaceViolence", "emergencyPreparedness", "clientCarePlanReview"];
+// The New Hire Packet, in the order it is signed. Training is deliberately NOT
+// part of this list: courses are the last thing a caregiver does before being
+// hired on, and they stay locked until the office manager releases them.
+export const NEW_HIRE_FORM_KEYS = [
+  "homemakerJobDescription",
+  "pcwJobDescription",
+  "orientationChecklist",
+  "caregiverAvailability",
+  "rulesOfTheRoad",
+  "employeeHandbookAck",
+  "policiesReceipt",
+  "careScopeAndTasks",
+  "workplaceViolence",
+  "missedVisitsPolicy",
+  "fluVaccineStatement",
+  "emergencyPreparedness",
+];
+
+// Only the job description matching the hire's assigned role has to be signed —
+// the packet says so explicitly — so one of these two counts, not both.
+const EITHER_OR_FORMS = [["homemakerJobDescription", "pcwJobDescription"]];
+
+// Paperwork is complete when every required form is filed, treating each
+// either/or pair as satisfied by one of its members.
+export function paperworkComplete(filedKeys: Set<string>) {
+  const eitherOrMembers = new Set(EITHER_OR_FORMS.flat());
+  const singles = NEW_HIRE_FORM_KEYS.filter((k) => !eitherOrMembers.has(k));
+  const singlesDone = singles.every((k) => filedKeys.has(k));
+  const pairsDone = EITHER_OR_FORMS.every((pair) => pair.some((k) => filedKeys.has(k)));
+  return singlesDone && pairsDone;
+}
 
 // These ids/titles must match window.DTC_COURSES in the dtccourses repo exactly —
 // they're how a completed course certificate gets matched back to a checklist step.
@@ -113,7 +142,15 @@ export default function NewHirePortal() {
   // what the person actually finished on courses.daretocarehomecare.com.
   const passedCourseIds = useMemo(() => new Set(myCerts.map((c: any) => c.courseId)), [myCerts]);
   const filedFormKeys = useMemo(() => new Set(myForms.map((f: any) => f.schemaKey)), [myForms]);
-  const paperworkDone = NEW_HIRE_FORM_KEYS.every((k) => filedFormKeys.has(k));
+  const paperworkDone = paperworkComplete(filedFormKeys);
+
+  // Courses are the last thing before being hired on, so they are not self-serve.
+  // Two gates, both required: the paperwork has to be in, AND an office manager
+  // or above has to release training for this person. Releasing is a deliberate
+  // act by the governing body, not something that happens automatically when the
+  // last form lands.
+  const coursesReleased = !!(user as any)?.coursesUnlockedAt;
+  const coursesUnlocked = paperworkDone && coursesReleased;
 
   const isStepDone = (step: any) => {
     if (step.id === "welcome") return true; // orientation is informational; nothing to file
@@ -130,6 +167,9 @@ export default function NewHirePortal() {
   // linked to the specific module so the training step and the course site stay
   // in sync — completion flows back automatically as a certificate.
   const openCourseModule = async (courseId: string) => {
+    // Belt and braces: the buttons are disabled when locked, but never hand out
+    // a course-site handoff token for someone who hasn't been released.
+    if (!coursesUnlocked) return;
     setOpening(courseId);
     const win = window.open("about:blank", "_blank");
     try {
@@ -193,7 +233,16 @@ export default function NewHirePortal() {
                   </span>
                 )}
               </div>
-              {!isLocked && step.id !== "shadow" && (
+              {/* Training that hasn't been released yet shows why, rather than a
+                  dead button. Paperwork first, then a person releases it. */}
+              {step.training && !isDone && !coursesUnlocked && (
+                <span style={{ fontSize: 11.5, color: "var(--ink-3)", flexShrink: 0, textAlign: "right", maxWidth: 150 }}>
+                  {!paperworkDone
+                    ? "Finish your paperwork first"
+                    : "Waiting on your office manager to release training"}
+                </span>
+              )}
+              {!isLocked && step.id !== "shadow" && !(step.training && !isDone && !coursesUnlocked) && (
                 <button
                   className={`newhire-step-action ${isDone ? "is-done" : ""}`}
                   onClick={() => {

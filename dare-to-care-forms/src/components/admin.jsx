@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Icon } from "./fields.jsx";
 import { AdminDashboard } from "../features/admin/AdminDashboard.tsx";
 import { DTCStore as Store } from "./store.js";
 import { fmtDate } from "../utils/format.ts";
 import { FormWizard } from "./forms/FormWizard";
+import { extractSchemaFromPdf } from "../utils/pdfExtract.ts";
 
 const relTime = (iso) => {
   if (!iso) return "—";
@@ -163,23 +164,55 @@ function Templates({ onEdit, onNav, onToast }) {
 
 // ── Upload/Library ─────────────────────────────────────────────────────────
 
-function Upload({ onImport }) {
+function Upload({ onImport, onUploadFile }) {
   const [, force] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [fileErr, setFileErr] = useState("");
+  const inputRef = useRef(null);
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
   const library = Store.getLibrary();
+
+  const acceptFile = (file) => {
+    if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf");
+    if (!isPdf) { setFileErr("That file isn't a PDF. Please choose a .pdf file."); return; }
+    setFileErr("");
+    onUploadFile(file);
+  };
 
   return (
     <div>
       <div className="ds-ph">
         <div>
           <h1>Import Template</h1>
-          <p>Select from the reference library to create an editable template backed by a structured schema.</p>
+          <p>Upload any PDF to create an editable template backed by a structured schema, or start from the reference library below.</p>
         </div>
       </div>
-      <div className="dropzone">
+      <div
+        className="dropzone"
+        style={dragOver ? { borderColor: "var(--accent)", background: "var(--accent-soft)" } : undefined}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          acceptFile(e.dataTransfer.files?.[0]);
+        }}
+      >
         <Icon n="upload" s={30} />
-        <div className="dt">Reference library import</div>
-        <div className="dd">Each import creates a draft template. Edit in the builder, then publish to make it live for caregivers.</div>
+        <div className="dt">Drag & drop a PDF here</div>
+        <div className="dd">Any PDF works — fillable forms auto-extract their fields; flat/scanned PDFs still import as a draft with the page text preserved so you can add fields.</div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          style={{ display: "none" }}
+          onChange={(e) => acceptFile(e.target.files?.[0])}
+        />
+        <button className="dbtn dbtn-primary" style={{ marginTop: 14 }} onClick={() => inputRef.current?.click()}>
+          <Icon n="upload" s={14} /> Choose PDF file
+        </button>
+        {fileErr ? <div style={{ color: "var(--red)", fontSize: 12.5, marginTop: 10 }}>{fileErr}</div> : null}
       </div>
       <div className="ds-navlabel" style={{ padding: "2px 2px 12px" }}>Reference library</div>
       <div className="upload-grid">
@@ -237,6 +270,72 @@ function Extracting({ lib, onDone }) {
             <div className={`est${i < active ? " done" : ""}`} key={step}>
               <span className="tk">{i < active ? <Icon n="check" s={12} /> : i + 1}</span>
               {step}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const UPLOAD_STEP_LABELS = {
+  reading: "Reading the PDF file",
+  "detecting-fields": "Detecting fillable form fields",
+  "extracting-text": "No form fields found — extracting page text instead",
+  building: "Building the draft template",
+  done: "Draft saved",
+};
+
+// Real extraction pipeline for an arbitrary admin-uploaded PDF — each step below
+// is reported only once the corresponding async work has actually happened
+// (see src/utils/pdfExtract.ts), so this is genuine progress, not a fake timer.
+function UploadExtracting({ file, onDone, onCancel }) {
+  const [doneSteps, setDoneSteps] = useState([]);
+  const [error, setError] = useState("");
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    (async () => {
+      try {
+        const schema = await extractSchemaFromPdf(file, (step) => {
+          setDoneSteps((prev) => (prev.includes(step) ? prev : [...prev, step]));
+        });
+        const template = await Store.importUploadedSchema(schema);
+        onDone(template);
+      } catch (err) {
+        console.error("PDF import failed", err);
+        setError(err?.message || "Couldn't read that PDF. It may be corrupted, password-protected, or an unsupported format.");
+      }
+    })();
+  }, [file, onDone]);
+
+  if (error) {
+    return (
+      <div>
+        <div className="ds-ph"><div><h1>Import failed</h1><p>{file.name}</p></div></div>
+        <div className="extracting">
+          <h3 style={{ color: "var(--red)" }}>{error}</h3>
+          <p>Try a different file, or open this one in another program and re-save it as a standard PDF.</p>
+          <button className="dbtn dbtn-primary" style={{ marginTop: 14 }} onClick={onCancel}>Back to import</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="ds-ph"><div><h1>Importing</h1><p>{file.name}</p></div></div>
+      <div className="extracting">
+        <div className="spin" />
+        <h3>Reading your PDF</h3>
+        <p>The schema is being prepared for editing and publishing.</p>
+        <div className="steps">
+          {doneSteps.map((step, i) => (
+            <div className={`est${i < doneSteps.length ? " done" : ""}`} key={step}>
+              <span className="tk"><Icon n="check" s={12} /></span>
+              {UPLOAD_STEP_LABELS[step] || step}
             </div>
           ))}
         </div>
@@ -1266,16 +1365,32 @@ function Certificates({ onToast }) {
 function AdminApp({ page, onNav, onToast }) {
   const [importLib, setImportLib] = useState(null);
   const [extracting, setExtracting] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
 
   useEffect(() => {
     setImportLib(null);
     setExtracting(false);
+    setUploadFile(null);
     setEditingKey(null);
   }, [page]);
 
   if (editingKey) {
     return <Builder templateKey={editingKey} onClose={() => { setEditingKey(null); onNav("templates"); }} onToast={onToast} />;
+  }
+
+  if (uploadFile) {
+    return (
+      <UploadExtracting
+        file={uploadFile}
+        onCancel={() => setUploadFile(null)}
+        onDone={(template) => {
+          setUploadFile(null);
+          onToast(`${template.name} imported as a draft`);
+          setEditingKey(template.key);
+        }}
+      />
+    );
   }
 
   if (extracting && importLib) {
@@ -1294,7 +1409,7 @@ function AdminApp({ page, onNav, onToast }) {
   switch (page) {
     case "dashboard": return <AdminDashboard />;
     case "templates": return <Templates onEdit={setEditingKey} onNav={onNav} onToast={onToast} />;
-    case "upload": return <Upload onImport={(item) => { setImportLib(item); setExtracting(true); }} />;
+    case "upload": return <Upload onImport={(item) => { setImportLib(item); setExtracting(true); }} onUploadFile={setUploadFile} />;
     case "users": return <UsersPage onToast={onToast} />;
     case "clients": return <ClientsPage onToast={onToast} />;
     case "audit": return <AuditLog />;

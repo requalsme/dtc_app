@@ -42,8 +42,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ── PdfPreview — shown as the in-app document preview step ─────────────────
-export function PdfPreview({ schema, values, score, submission }: any) {
-  const sheetRef = useRef<HTMLDivElement>(null);
+// `sheetRef` may be supplied by a parent (the wizard) so it can capture this
+// same rendered sheet at submit time and file it against the client/staff member.
+export function PdfPreview({ schema, values, score, submission, sheetRef: externalSheetRef }: any) {
+  const localSheetRef = useRef<HTMLDivElement>(null);
+  const sheetRef = externalSheetRef || localSheetRef;
   const [downloading, setDownloading] = useState(false);
   const doDownload = async () => {
     if (!sheetRef.current) return;
@@ -274,7 +277,7 @@ function SectionStep({ section, values, setField, ctx, invalidIds, score, schema
 
 // ── WizardIntro ────────────────────────────────────────────────────────────
 
-function WizardIntro({ schema, needsClient, client, setClient }: any) {
+function WizardIntro({ schema, needsClient, client, setClient, isPreview }: any) {
   return (
     <div>
       <div className="wizintro">
@@ -287,7 +290,11 @@ function WizardIntro({ schema, needsClient, client, setClient }: any) {
           <div className="f"><b>{schema.category}</b>record</div>
         </div>
       </div>
-      {needsClient ? (
+      {isPreview && needsClient ? (
+        <div className="card" style={{ background: "var(--surface-3)", textAlign: "center", fontSize: 13, color: "var(--ink-2)" }}>
+          Preview mode — using a placeholder client so you can see the full form. Real submissions will require selecting an actual client.
+        </div>
+      ) : needsClient ? (
         <div>
           <div className="section-label" style={{ marginTop: 6 }}>Select client</div>
           {Store.clients.map((c: any) => (
@@ -331,12 +338,17 @@ export function FormWizard({
       }
     : getSchema(schemaKey);
   const needsClient = schema.subject === "client";
+  const isPreview = !!schemaOverride;
+  const previewClient = { id: "__preview__", name: "Preview Client", initials: "PC", dob: null, mrn: "PREVIEW", allergies: null };
 
-  const [client, setClient] = useState(initialClient || null);
+  const [client, setClient] = useState(initialClient || (isPreview && needsClient ? previewClient : null));
   const [values, setValues] = useState<any>(prefillValues || {});
   const [step, setStep] = useState(0);
   const [tried, setTried] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // The rendered document sheet on the final step. Passed out on submit so the
+  // caller can file the exact document the user just approved.
+  const sheetRef = useRef<HTMLDivElement>(null);
   const ctx = { currentUser: D.currentUser, client };
 
   const appliedRef = useRef(false);
@@ -418,7 +430,7 @@ export function FormWizard({
 
       <div className="wiz-body" ref={bodyRef}>
         {step === 0 ? (
-          <WizardIntro schema={schema} needsClient={needsClient} client={client} setClient={setClient} />
+          <WizardIntro schema={schema} needsClient={needsClient} client={client} setClient={setClient} isPreview={isPreview} />
         ) : step <= nSec ? (
           <SectionStep
             section={schema.sections[step - 1]} values={values} setField={setField} ctx={ctx}
@@ -427,7 +439,7 @@ export function FormWizard({
         ) : step === REVIEW ? (
           <ReviewStep schema={schema} values={values} score={score} onEdit={(i: number) => { setStep(i + 1); scrollTop(); }} />
         ) : (
-          <PdfPreview schema={schema} values={values} score={score} />
+          <PdfPreview schema={schema} values={values} score={score} sheetRef={sheetRef} />
         )}
       </div>
 
@@ -438,7 +450,7 @@ export function FormWizard({
         ) : step === REVIEW ? (
           <button className="btn btn-primary" onClick={goNext}>Preview PDF</button>
         ) : (
-          <button className="btn btn-primary" disabled={isSubmitting} onClick={() => onSubmit({ schema, values, score, client })}>
+          <button className="btn btn-primary" disabled={isSubmitting} onClick={() => onSubmit({ schema, values, score, client, sheetEl: sheetRef.current })}>
             <Icon n="check" s={17} /> {submitLabel}
           </button>
         )}

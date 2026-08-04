@@ -469,25 +469,33 @@ export function CaregiverDashboard({ page = "today", onNav }: { page: string; on
 
   const startForm = (schemaKey: string, client: any) => setWizard({ schemaKey, client });
 
-  const submit = async ({ schema, values, score, client }: any) => {
+  const submit = async ({ schema, values, score, client, sheetEl }: any) => {
     setIsSubmitting(true);
     try {
       if (resubmitting) {
         // Resubmit corrected form
-        await Store.resubmitSubmission(resubmitting.id, {
+        const resaved = await Store.resubmitSubmission(resubmitting.id, {
           schemaKey: schema.key,
           clientId: client ? client.id : null,
           clientName: client ? client.name : null,
           values, score,
         });
+        // Re-file so the stored PDF always reflects the corrected version.
+        await Store.fileSubmissionPdf(
+          { ...resubmitting, ...resaved, clientId: client ? client.id : null, clientName: client ? client.name : null },
+          sheetEl,
+        );
         setResubmitting(null);
       } else {
-        await Store.addSubmission({
+        const saved = await Store.addSubmission({
           schemaKey: schema.key,
           clientId: client ? client.id : null,
           clientName: client ? client.name : null,
           values, score,
         });
+        // File the approved document against the client (or, for staff-subject
+        // forms, the signer) while the rendered sheet is still mounted.
+        await Store.fileSubmissionPdf(saved, sheetEl);
         // Mark task complete if started from a task
         if (activeTask) {
           await Store.updateTask(activeTask.id, { status: "completed", completedAt: new Date().toISOString() });

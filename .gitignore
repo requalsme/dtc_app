@@ -6,3 +6,7 @@ node_modules
 dist
 server/storage
 _archive/
+
+# Local scratch + tool logs (not part of the app)
+tmp/
+.firebase/logs/

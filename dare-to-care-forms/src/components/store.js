@@ -1,5 +1,11 @@
 import { collection, doc, getDocs, setDoc, addDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { auth, db, firebaseConfig } from "../config/firebase";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage, firebaseConfig } from "../config/firebase";
+// Static: FormWizard already imports this, so a dynamic import here would not
+// split it into its own chunk. The heavy libraries (jspdf, html2canvas) are
+// dynamically imported inside utils/pdf itself, which is where the win actually is.
+// @ts-ignore
+import { elementToPdfBlob } from "../utils/pdf";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 
@@ -227,6 +233,28 @@ export const DTCStore = {
     return template;
   },
 
+  // Real, arbitrary-PDF import: unlike importTemplate (which clones one of the
+  // fixed reference-library schemas), this accepts a schema built at runtime by
+  // src/utils/pdfExtract.ts from whatever PDF the admin actually uploaded.
+  async importUploadedSchema(schema) {
+    const key = state.templates.some((t) => t.key === schema.key)
+      ? `${schema.key}_${Date.now().toString(36)}`
+      : schema.key;
+    const fieldCount = (schema.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
+    const template = {
+      ...schema,
+      key,
+      status: "draft",
+      version: schema.version || 1,
+      fieldCount,
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, "templates", key), template);
+    await logAudit("template_imported", schema.name || key, `Uploaded from ${schema.sourceFile || "PDF"}`);
+    await refresh();
+    return template;
+  },
+
   async saveTemplate(template) {
     const fieldCount = (template.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
     const toSave = { ...template, fieldCount, updatedAt: new Date().toISOString() };
@@ -291,6 +319,76 @@ export const DTCStore = {
 
   removeFromQueue,
   async syncQueue() { await syncQueue(); },
+
+  // ─── Filing ──────────────────────────────────────────────────────────────
+  // Every completed form is filed as a PDF against the person it belongs to,
+  // so records live under a client's or staff member's name the way a paper
+  // folder would — rather than only existing if someone clicks "download".
+
+  // A form is filed under the client it is about; forms with no client (new-hire
+  // paperwork, policy acknowledgements) are filed under the staff member who
+  // signed them.
+  subjectForSubmission(sub) {
+    if (!sub) return null;
+    if (sub.clientId) {
+      return { type: "client", id: sub.clientId, name: sub.clientName || "Client" };
+    }
+    if (sub.caregiverId) {
+      return { type: "staff", id: sub.caregiverId, name: sub.caregiverName || "Staff" };
+    }
+    return null;
+  },
+
+  // All filed records for one person, newest first.
+  submissionsForSubject(type, id) {
+    if (!id) return [];
+    const key = type === "client" ? "clientId" : "caregiverId";
+    return state.submissions
+      .filter((s) => s[key] === id)
+      // A client-subject form belongs to the client, not to the caregiver who
+      // filled it in — so it must not also appear in that caregiver's own file.
+      .filter((s) => (type === "staff" ? !s.clientId : true))
+      .sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || "")));
+  },
+
+  // Renders the on-screen document, uploads it, and links it to the record.
+  // Never throws: a storage failure must not lose an already-saved submission,
+  // so it degrades to pdfPending and can be regenerated later.
+  async fileSubmissionPdf(saved, sheetEl) {
+    if (!saved?.id || saved.queued || !sheetEl) {
+      if (saved?.id && !saved.queued) {
+        try { await updateDoc(doc(db, "submissions", saved.id), { pdfPending: true }); } catch { /* non-fatal */ }
+      }
+      return null;
+    }
+    const subject = DTCStore.subjectForSubmission(saved);
+    if (!subject) return null;
+    try {
+      const blob = await elementToPdfBlob(sheetEl);
+      // Filed documents are immutable. A corrected resubmission is filed as a new
+      // version alongside the original rather than overwriting it, so there is
+      // always a record of exactly what was signed and when.
+      const path = `filed/${subject.type}/${subject.id}/${saved.id}__${Date.now()}.pdf`;
+      const fileRef = storageRef(storage, path);
+      await uploadBytes(fileRef, blob, { contentType: "application/pdf" });
+      const url = await getDownloadURL(fileRef);
+      await updateDoc(doc(db, "submissions", saved.id), {
+        pdfUrl: url,
+        pdfPath: path,
+        pdfFiledAt: new Date().toISOString(),
+        pdfPending: false,
+        subjectType: subject.type,
+        subjectId: subject.id,
+      });
+      await logAudit("form_filed", saved.templateName || saved.schemaKey, subject.name);
+      await refresh();
+      return url;
+    } catch {
+      // Keep the record; flag that its PDF still needs generating.
+      try { await updateDoc(doc(db, "submissions", saved.id), { pdfPending: true }); } catch { /* non-fatal */ }
+      return null;
+    }
+  },
 
   async updateSubmission(id, patch) {
     const actor = state.user;

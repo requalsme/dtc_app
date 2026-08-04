@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// Dare to Care — Firebase Storage security rules.
+//
+// Holds two kinds of object:
+//   filed/{subjectType}/{subjectId}/{submissionId}.pdf — completed, signed forms
+//     filed against the client the form is about, or the staff member who signed
+//     it when the form has no client subject. This is PHI.
+//   courses/** — training videos streamed by the new-hire portal.
+//
+// NOTE ON ROLE CHECKS: Storage rules cannot read Firestore, so they cannot look
+// up a user's role document the way firestore.rules does. Until custom auth
+// claims are issued (see below), these rules gate on "signed in" plus tight
+// path/content constraints. The Firestore `submissions` records that carry the
+// download URLs ARE role-gated, so a caregiver has no practical route to another
+// client's file. To harden further, set a `role` custom claim on each user at
+// creation and replace isSignedIn() below with a claim check.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Filed clinical documents.
+    match /filed/{subjectType}/{subjectId}/{fileName} {
+      allow read: if isSignedIn();
+
+      // Create only — filed documents are immutable once written. A corrected
+      // form is re-filed under its own submission id rather than overwriting the
+      // original, so the record of what was signed at the time is preserved.
+      allow create: if isSignedIn()
+                    && subjectType in ['client', 'staff']
+                    && request.resource.contentType == 'application/pdf'
+                    && request.resource.size < 25 * 1024 * 1024;
+
+      allow update, delete: if false;
+    }
+
+    // Training videos: readable by signed-in staff, managed from the console.
+    match /courses/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

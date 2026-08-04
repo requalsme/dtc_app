@@ -42,6 +42,7 @@ const navByRole: Record<Role, NavItem[]> = {
   ],
   newHire: [
     { to: "/new-hire", label: "Onboarding", icon: "home" },
+    { to: "https://courses.daretocarehomecare.com", label: "Training Courses", icon: "video", external: true, courseHandoff: true },
   ],
   client: [
     { to: "/client", label: "My Forms", icon: "file" },

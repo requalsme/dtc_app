@@ -8,7 +8,11 @@
 // jsPDF and html2canvas are imported dynamically so they only load when a user
 // actually exports a PDF (keeps the initial bundle small).
 
-export async function downloadElementAsPdf(el: HTMLElement, filename: string): Promise<void> {
+// Renders the element to a jsPDF document. Shared by the manual "download a
+// copy" button and by the automatic filing pipeline, so the file a user
+// downloads and the file kept on the client's/staff member's record are
+// byte-for-byte the same document.
+async function renderElementToPdf(el: HTMLElement): Promise<any> {
   const [html2canvasMod, jspdfMod] = await Promise.all([
     import("html2canvas"),
     import("jspdf"),
@@ -44,7 +48,19 @@ export async function downloadElementAsPdf(el: HTMLElement, filename: string): P
     heightLeft -= pageH;
   }
 
+  return pdf;
+}
+
+export async function downloadElementAsPdf(el: HTMLElement, filename: string): Promise<void> {
+  const pdf = await renderElementToPdf(el);
   pdf.save(filename);
+}
+
+// Same render, returned as a Blob so it can be uploaded to Storage and filed
+// against a client or staff member instead of (or as well as) downloaded.
+export async function elementToPdfBlob(el: HTMLElement): Promise<Blob> {
+  const pdf = await renderElementToPdf(el);
+  return pdf.output("blob") as Blob;
 }
 
 export function safeFileName(name: string): string {

@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, setDoc, addDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import { collection, doc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, arrayUnion } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { auth, db, storage, firebaseConfig } from "../config/firebase";
 // Static: FormWizard already imports this, so a dynamic import here would not
@@ -700,6 +700,42 @@ export const DTCStore = {
 
   getDeletedSubmissions() {
     return (state.submissions || []).filter((s) => !!s.deletedAt);
+  },
+
+  // Real, unrecoverable delete. Requested explicitly, after soft delete was
+  // the recommendation — this is the escape hatch for when soft delete isn't
+  // enough (real duplicate, entered against the wrong person entirely, or
+  // something that genuinely should never have existed).
+  //
+  // Two things this does NOT relax:
+  //   - firestore.rules still only grants delete to isDevUser(). Nobody else
+  //     gets this by asking nicely, no matter what's in this function.
+  //   - only a submission already sitting in the soft-deleted state can be
+  //     hard-deleted. That's enforced here, not just as a UI nicety — it's a
+  //     built-in cooling-off step: nothing goes straight from "filed" to
+  //     "gone" in one click, only through "removed from view" first.
+  //
+  // Because the record itself is about to be unrecoverable, this writes the
+  // audit entry BEFORE deleting and packs a real snapshot into it — form,
+  // subject, who deleted it, when it was first soft-deleted and why, and now
+  // who hard-deleted it and why. The audit trail is the only place any of
+  // this will still exist afterward, so it has to actually say something.
+  async hardDeleteSubmission(id, reason) {
+    const sub = state.submissions.find((s) => s.id === id);
+    if (!sub) throw new Error("Submission not found");
+    if (!sub.deletedAt) throw new Error("Only an already soft-deleted submission can be permanently deleted");
+
+    const snapshot = [
+      `form: ${sub.templateName || sub.schemaKey || "unknown"}`,
+      `subject: ${sub.clientName || sub.caregiverName || "unknown"}`,
+      `originally submitted: ${sub.submittedAt || "unknown"}`,
+      `soft-deleted by ${sub.deletedBy || "unknown"} on ${sub.deletedAt}: "${sub.deleteReason || ""}"`,
+      `permanently deleted by ${state.user?.name || "Dev portal"}: "${reason || ""}"`,
+    ].join(" | ");
+
+    await logAudit("submission_hard_deleted", id, snapshot);
+    await deleteDoc(doc(db, "submissions", id));
+    await refresh();
   },
 
   async updateSubmission(id, patch) {

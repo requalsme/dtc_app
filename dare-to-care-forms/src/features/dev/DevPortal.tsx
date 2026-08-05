@@ -184,6 +184,8 @@ function SystemHealth() {
 
 function DeletedItems() {
   const [, force] = useState(0);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
   const deleted = Store.getDeletedSubmissions ? Store.getDeletedSubmissions() : [];
 
   const restore = async (id: string) => {
@@ -191,8 +193,21 @@ function DeletedItems() {
     force((v) => v + 1);
   };
 
+  const openConfirm = (id: string) => { setConfirming(id); setTyped(""); };
+  const closeConfirm = () => { setConfirming(null); setTyped(""); };
+
+  const confirmHardDelete = async () => {
+    if (!confirming) return;
+    const reason = window.prompt("Why is this being permanently deleted? This goes in the audit log.") || "";
+    await Store.hardDeleteSubmission(confirming, reason);
+    closeConfirm();
+    force((v) => v + 1);
+  };
+
+  const target = deleted.find((s: any) => s.id === confirming);
+
   return (
-    <Section title="Deleted items" sub="Nothing here was erased — every row can be put back.">
+    <Section title="Deleted items" sub="Soft-deleted rows can be restored. Permanent delete is one step further and does not come back.">
       <div className="ds-panel">
         {deleted.length === 0 ? (
           <p style={{ color: "var(--text-muted, #666)" }}>Nothing has been deleted.</p>
@@ -206,13 +221,63 @@ function DeletedItems() {
                   <td>{s.deletedBy || "—"}</td>
                   <td>{s.deletedAt ? new Date(s.deletedAt).toLocaleString() : "—"}</td>
                   <td>{s.deleteReason || "—"}</td>
-                  <td><button className="dbtn" onClick={() => restore(s.id)}>Restore</button></td>
+                  <td style={{ display: "flex", gap: 6 }}>
+                    <button className="dbtn" onClick={() => restore(s.id)}>Restore</button>
+                    <button
+                      className="dbtn"
+                      style={{ color: "#c23b3b", borderColor: "#c23b3b" }}
+                      onClick={() => openConfirm(s.id)}
+                    >
+                      Delete permanently
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {confirming && target && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
+          }}
+          onClick={closeConfirm}
+        >
+          <div
+            style={{ background: "var(--bg-primary, #fff)", borderRadius: 10, padding: 24, maxWidth: 420, width: "90%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, color: "#c23b3b" }}>This cannot be undone</h3>
+            <p style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+              You're about to permanently delete <strong>{target.templateName || target.schemaKey}</strong>
+              {target.clientName || target.caregiverName ? <> for <strong>{target.clientName || target.caregiverName}</strong></> : null}.
+              Unlike everything else in this system, this record will not be recoverable and will not appear
+              anywhere again — not even here. A snapshot goes into the audit log, but the document itself is gone.
+            </p>
+            <p style={{ fontSize: 13, fontWeight: 600 }}>Type DELETE to confirm.</p>
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ddd)", marginBottom: 14 }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button className="dbtn" onClick={closeConfirm}>Cancel</button>
+              <button
+                className="dbtn"
+                disabled={typed !== "DELETE"}
+                style={{ background: typed === "DELETE" ? "#c23b3b" : undefined, color: typed === "DELETE" ? "#fff" : undefined, opacity: typed === "DELETE" ? 1 : 0.5 }}
+                onClick={confirmHardDelete}
+              >
+                Permanently delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }

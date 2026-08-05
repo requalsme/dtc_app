@@ -109,8 +109,17 @@ service cloud.firestore {
                          || isDevUser()
                        );
 
-      // Signed records are never destroyed. Corrections supersede; they don't erase.
-      allow delete: if false;
+      // Signed records are not destroyed by anyone in the ordinary course of
+      // work — corrections supersede, they don't erase, and that holds for
+      // every role up through office manager.
+      //
+      // The dev portal is the one exception, granted explicitly (hard delete,
+      // asked for after soft delete). Even here it isn't a bare permission:
+      // `hardDeleteSubmission` in store.js is the only place that calls this,
+      // and it refuses to run unless the record is already soft-deleted —
+      // enforced there, but the rule below is what actually stops a request
+      // that skips that check, since client code is not the security boundary.
+      allow delete: if isDevUser() && resource.data.deletedAt != null;
     }
 
     // Documents that arrived from outside the app — emailed authorizations,

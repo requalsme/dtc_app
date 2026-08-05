@@ -327,16 +327,25 @@ function SubmissionDetail({ submission, onClose, onToast }: { submission: any; o
   }, [submission.id]);
 
   const requestCorrection = async (note: string) => {
-    await Store.requestCorrection(liveSub.id, note);
-    onToast("Correction requested — caregiver notified");
-    setCorrectionModal(false);
-    force((v) => v + 1);
+    try {
+      await Store.requestCorrection(liveSub.id, note);
+      onToast("Correction requested — caregiver notified");
+      setCorrectionModal(false);
+      force((v) => v + 1);
+    } catch (err: any) {
+      onToast(err?.message || "Could not request correction");
+      setCorrectionModal(false);
+    }
   };
 
   const markReviewed = async () => {
-    await Store.updateSubmission(liveSub.id, { status: "reviewed" });
-    onToast("Submission marked reviewed");
-    onClose();
+    try {
+      await Store.updateSubmission(liveSub.id, { status: "reviewed" });
+      onToast("Submission marked reviewed");
+      onClose();
+    } catch (err: any) {
+      onToast(err?.message || "Could not mark reviewed");
+    }
   };
 
   return (

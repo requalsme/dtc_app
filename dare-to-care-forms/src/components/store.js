@@ -304,7 +304,27 @@ auth.onAuthStateChanged((user) => {
   else clearState();
 });
 
+// Admin "preview as role" (see AuthContext.enterPreview) renders real
+// caregiver/officeManager/newHire/client screens so an admin can see exactly
+// what that role sees. The screens themselves have no idea they're being
+// previewed — they call the same Store write methods a real user would. This
+// flag is the actual safety boundary: every write method below calls
+// assertWritable() first, so "preview mode won't affect real data" (the copy
+// shown in the UI) is true because the write never reaches Firestore, not
+// just because nobody happened to click a button. Toggled by
+// AuthContext.enterPreview/exitPreview — never set from anywhere a real
+// logged-in-as-that-role user's actions run through.
+let previewMode = false;
+function assertWritable() {
+  if (previewMode) {
+    throw new Error("Preview mode — no changes were made. Exit preview to make real changes.");
+  }
+}
+
 export const DTCStore = {
+  setPreviewMode(on) { previewMode = on; },
+  get isPreviewMode() { return previewMode; },
+
   subscribe(listener) {
     listeners.add(listener);
     try { listener(); } catch { /* ignore */ }
@@ -424,6 +444,7 @@ export const DTCStore = {
   getQueuedSubmissions,
 
   async addSubmission(submission) {
+    assertWritable();
     // Stamp the record with everything the review workflow depends on. These were
     // missing before, which broke the caregiver Records tab and office review queue.
     const me = state.user;
@@ -541,6 +562,7 @@ export const DTCStore = {
   // Both land in the same place under the same person, so a complete file
   // reads the same whether it was built digitally or out of a paper folder.
   async uploadDocument(subjectType, subjectId, checklistItemId, file, meta = {}) {
+    assertWritable();
     if (!file) throw new Error("No file chosen");
     if (!["client", "staff"].includes(subjectType)) throw new Error("Unknown file type");
     // 25MB matches the storage rules. A phone photo of a licence is ~3MB, so
@@ -721,6 +743,7 @@ export const DTCStore = {
   // who hard-deleted it and why. The audit trail is the only place any of
   // this will still exist afterward, so it has to actually say something.
   async hardDeleteSubmission(id, reason) {
+    assertWritable();
     const sub = state.submissions.find((s) => s.id === id);
     if (!sub) throw new Error("Submission not found");
     if (!sub.deletedAt) throw new Error("Only an already soft-deleted submission can be permanently deleted");
@@ -739,6 +762,7 @@ export const DTCStore = {
   },
 
   async updateSubmission(id, patch) {
+    assertWritable();
     const actor = state.user;
     const update = { ...patch };
     if (patch.status === "reviewed") {
@@ -752,6 +776,7 @@ export const DTCStore = {
   },
 
   async requestCorrection(id, note) {
+    assertWritable();
     const actor = state.user;
     // Use the same status string the whole UI checks for ("needsCorrection"),
     // and append to an audit trail on the record itself.
@@ -771,6 +796,7 @@ export const DTCStore = {
   },
 
   async resubmitSubmission(id, payload) {
+    assertWritable();
     const actor = state.user;
     await updateDoc(doc(db, "submissions", id), {
       ...payload,
@@ -792,12 +818,14 @@ export const DTCStore = {
   getTasks() { return state.tasks.slice(); },
 
   async createTask(task) {
+    assertWritable();
     const docRef = await addDoc(collection(db, "tasks"), task);
     await refresh();
     return { id: docRef.id, ...task };
   },
 
   async updateTask(id, patch) {
+    assertWritable();
     await updateDoc(doc(db, "tasks", id), patch);
 
     // Recurring compliance: completing a repeating task schedules the next one.
@@ -836,6 +864,7 @@ export const DTCStore = {
   getToken() { return getStoredToken(); },
 
   async createUser(userInput) {
+    assertWritable();
     const { email, password, ...rest } = userInput;
     const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     const initials = rest.name.split(' ').map(s => s[0]).join('').toUpperCase().slice(0, 2) || '?';
@@ -855,6 +884,7 @@ export const DTCStore = {
   },
 
   async updateUser(id, patch) {
+    assertWritable();
     await updateDoc(doc(db, "users", id), patch);
     await logAudit("user_updated", state.users.find((u) => u.id === id)?.name || id);
     await refresh();
@@ -867,6 +897,7 @@ export const DTCStore = {
 
   // Clients
   async createClient(clientInput) {
+    assertWritable();
     const initials = (clientInput.name || "?").split(' ').map((s) => s[0]).join('').toUpperCase().slice(0, 2) || '?';
     const data = { status: "active", initials, ...clientInput };
     const docRef = await addDoc(collection(db, "clients"), data);
@@ -876,6 +907,7 @@ export const DTCStore = {
   },
 
   async updateClient(id, patch) {
+    assertWritable();
     await updateDoc(doc(db, "clients", id), patch);
     await logAudit("client_updated", state.clients.find((c) => c.id === id)?.name || id);
     await refresh();
@@ -981,6 +1013,7 @@ export const DTCStore = {
   // Create a one-time handoff token so the course site can identify the logged-in
   // user without a second sign-in. No personal data goes in the URL — only this token.
   async createCourseHandoff() {
+    assertWritable();
     const me = state.user;
     if (!me) return null;
 
@@ -1038,6 +1071,7 @@ export const DTCStore = {
   },
 
   async updateClientAssignments(clientId, userIds) {
+    assertWritable();
     await updateDoc(doc(db, "clients", clientId), { assignedUsers: userIds });
     await refresh();
     return { assignments: userIds };

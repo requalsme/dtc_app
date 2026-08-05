@@ -71,6 +71,8 @@ export function NewHireReview({ onToast }: { onToast: (m: string) => void }) {
         coursesUnlockedBy: Store.currentUser?.name || "Office Manager",
       });
       onToast(`Training released for ${hire.name}`);
+    } catch (err: any) {
+      onToast(err?.message || "Could not release training");
     } finally { setBusy(""); }
   };
 
@@ -84,6 +86,8 @@ export function NewHireReview({ onToast }: { onToast: (m: string) => void }) {
       });
       onToast(`${hire.name} is now a caregiver`);
       setOpenHire(null);
+    } catch (err: any) {
+      onToast(err?.message || "Could not hire");
     } finally { setBusy(""); }
   };
 

@@ -4,6 +4,8 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 // @ts-ignore - JS module without types
 import { setStoredSession, clearStoredSession } from "./auth-storage.js";
+// @ts-ignore - JS module without types
+import { DTCStore } from "../components/store.js";
 
 export type Role = "admin" | "caregiver" | "officeManager" | "newHire" | "client";
 
@@ -136,15 +138,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(auth);
     clearStoredSession();
     setPreviewRole(null);
+    DTCStore.setPreviewMode(false);
     setIsDevMode(false);
     setUser(null);
   };
 
+  // This is the actual safety boundary behind the "changes won't affect real
+  // data" banner — see the matching comment on assertWritable() in store.js.
+  // Every Store write method checks this flag before touching Firestore, so
+  // the promise in the UI is enforced in one place rather than trusted at
+  // each call site.
   const enterPreview = (role: Role) => {
-    if (user?.role === "admin") setPreviewRole(role);
+    if (user?.role === "admin") {
+      setPreviewRole(role);
+      DTCStore.setPreviewMode(true);
+    }
   };
 
-  const exitPreview = () => setPreviewRole(null);
+  const exitPreview = () => {
+    setPreviewRole(null);
+    DTCStore.setPreviewMode(false);
+  };
 
   const effectiveRole = previewRole ?? user?.role ?? null;
 

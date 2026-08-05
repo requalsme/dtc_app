@@ -2,6 +2,22 @@
   command = "cd dare-to-care-forms && npm install && npm run build"
   publish = "dare-to-care-forms/dist"
 
+# Serverless ingestion: the scheduled Outlook poll and the two endpoints the
+# review queue calls. These live here rather than in Firebase Cloud Functions
+# because Cloud Functions require the paid Blaze plan for what is, in practice,
+# one cron job and two form posts. Netlify runs all three on the free tier.
+#
+# The shared logic in ../functions is a plain library with no hosting SDK in it,
+# so it can be lifted somewhere else if this ever outgrows the free allowance.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  # firebase-admin has native/dynamic bits that esbuild should not try to inline.
+  external_node_modules = ["firebase-admin"]
+
+# The poll's schedule is declared in netlify/functions/poll-outlook.mjs via its
+# exported config, so it stays next to the code that explains why it's 15 minutes.
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

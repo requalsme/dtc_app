@@ -2,6 +2,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth, type Role } from './app/AuthContext';
 import LoginPage from './app/LoginPage';
+import DevLoginPage from './app/DevLoginPage';
+import DevProtectedRoute from './app/DevProtectedRoute';
+import DevPortal from './features/dev/DevPortal';
 import SetupPage from './app/SetupPage';
 import ChangePasswordPage from './app/ChangePasswordPage';
 import AppShell from './app/AppShell';
@@ -121,6 +124,9 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/dev-login" element={<DevLoginPage />} />
+          <Route path="/dev" element={<DevProtectedRoute><DevPortal /></DevProtectedRoute>} />
+          <Route path="/dev/*" element={<DevProtectedRoute><DevPortal /></DevProtectedRoute>} />
           <Route path="/setup" element={<SetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/" element={<RoleRedirect />} />

@@ -55,6 +55,16 @@ to be pulled per-client from CareTime or entered in the app.
 **Raina and Raven Branch aren't in the import.** Both show as *inactive* in
 CareTime, so they're excluded. If either needs an app login, add them by hand.
 
+**Dev portal access is separate from all of this, and nothing in the import
+grants it.** `devAccess: true` is a field on a user document that the app never
+sets by itself — it has to be added by hand in the Firebase console (Firestore →
+`users` → the account → add the field). Raina's real job in the roster can stay
+"caregiver," because that's genuinely the work she's assigned; `devAccess` is a
+second, independent grant on top of it, reached through a separate login at
+`/dev-login`. The same applies to Rejane as owner. Nobody gets this from the
+migration, on purpose — see `firestore.rules` (`isDevUser()`), which also blocks
+anyone granting it to themselves through the ordinary profile-edit path.
+
 **Staff import creates real logins.** Accounts are created with a random
 throwaway password and `mustChangePassword: true`, and **no email is sent**. Send
 password-reset invitations from the app's Team screen when you actually want

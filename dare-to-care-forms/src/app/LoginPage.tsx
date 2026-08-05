@@ -230,6 +230,20 @@ export default function LoginPage() {
             Need access? Contact your administrator.
           </div>
         </section>
+
+        {/* Off to the side and small on purpose — this is not the door most
+            people should notice, let alone use. Everyone with an account signs
+            in above, including people who also have dev access; this is only
+            a shortcut to the separate gate for that second grant. */}
+        <div style={{ marginTop: '1.25rem', textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/dev-login')}
+            style={{ background: 'none', border: 'none', color: 'var(--slate-400)', fontSize: '0.8rem', textDecoration: 'underline', cursor: 'pointer', padding: '4px' }}
+          >
+            Dev login
+          </button>
+        </div>
       </div>
     </div>
   );

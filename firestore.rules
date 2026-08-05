@@ -25,6 +25,14 @@ service cloud.firestore {
     function isSelf(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+    // Independent of role. Raina's real job in the roster can be "caregiver" —
+    // that's genuinely the work assigned to her — while this is a second,
+    // separate grant for the dev portal. Only ever set by hand in Firestore
+    // (see the users rule below, which blocks self-granting it), never by the
+    // app, so it can't become something anyone hands themselves.
+    function isDevUser() {
+      return isSignedIn() && hasUserDoc() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.devAccess == true;
+    }
 
     match /metadata/setup {
       allow read: if true;
@@ -42,7 +50,20 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, update: if isSelf(userId) || isAdmin();
+      // devAccess is deliberately excluded from what isSelf can write. Without
+      // this, someone editing their own profile (name, phone, password-change
+      // flag — all legitimately self-serve) could add one field and grant
+      // themselves the dev portal. Only an existing dev/admin can hand it out.
+      // (`resource == null` on create — diff against resource.data would error
+      // on a document that doesn't exist yet, so create just bars the field
+      // outright for a self-write rather than diffing against nothing.)
+      allow create: if isAdmin() || isDevUser() || (
+        isSelf(userId) && !request.resource.data.keys().hasAny(['devAccess'])
+      );
+      allow update: if isAdmin() || isDevUser() || (
+        isSelf(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['devAccess'])
+      );
       allow delete: if false;
     }
 
@@ -57,7 +78,7 @@ service cloud.firestore {
     // alter the forms themselves.
     match /templates/{templateId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isDevUser();
     }
 
     match /submissions/{submissionId} {
@@ -73,10 +94,19 @@ service cloud.firestore {
       // review it, request a correction, or attach the filed PDF. The caregiver
       // who filed it may only touch it while it is sitting in needsCorrection —
       // i.e. to fix and resubmit what they were asked to fix.
-      allow update: if isStaff()
-                    || (
-                         resource.data.caregiverId == request.auth.uid
-                         && resource.data.status == 'needsCorrection'
+      // Soft-delete rides this same update path, but is carved out to dev
+      // users only — an office manager can review and correct a record, but
+      // removing one from view (even reversibly) is an owner-level call.
+      allow update: if (
+                         isStaff()
+                         || (
+                              resource.data.caregiverId == request.auth.uid
+                              && resource.data.status == 'needsCorrection'
+                            )
+                       ) && (
+                         !request.resource.data.diff(resource.data).affectedKeys()
+                           .hasAny(['deletedAt', 'deletedBy', 'deletedById', 'deleteReason'])
+                         || isDevUser()
                        );
 
       // Signed records are never destroyed. Corrections supersede; they don't erase.

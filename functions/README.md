@@ -8,6 +8,31 @@ Compliance evidence for the agency currently lives only in email — CareTime
 holds zero documents for all 50 people on the roster. This is the pipe that
 moves it somewhere a surveyor can be shown it.
 
+## Where it runs, and why not Firebase
+
+This directory is a **library**, not a deployment. Nothing in it imports a
+hosting provider's SDK — it needs a Firestore handle, a Storage bucket and a
+Graph credential, and runs anywhere that can supply those.
+
+The deployed entry points are **Netlify functions** in `netlify/functions/`:
+
+| Endpoint | Kind | What it does |
+|---|---|---|
+| `poll-outlook` | scheduled, `*/15 * * * *` | Pulls new attachments into the queue |
+| `resolve-inbound` | POST | A reviewer files a document against a person |
+| `dismiss-inbound` | POST | Not a compliance record |
+
+It was originally written as Firebase Cloud Functions, which require the paid
+**Blaze** plan — for what is, in practice, one cron job and two form posts.
+Netlify runs all three on the free tier: a 15-minute poll is about 2,900
+invocations a month against a 125,000 allowance.
+
+The tradeoff is execution time. Free-tier functions get a short window, so the
+poll works to a **wall-clock budget** and stops politely rather than being
+killed mid-attachment. The watermark in `metadata/ingestion` only advances past
+messages that were fully handled, so an interrupted run costs a few minutes, not
+a referral.
+
 ## The shape of it
 
 ```
@@ -21,7 +46,7 @@ Outlook ──poll──▶ classify ──▶ match against both rosters ──
 
 Two halves, deliberately split. The scheduled half only ever produces
 suggestions, so it is allowed to be wrong. The filing half runs only when
-someone clicks a name, and re-checks their role server-side before it writes.
+someone clicks a name, and re-verifies their ID token and role before it writes.
 
 | File | What it does |
 |---|---|
@@ -29,8 +54,11 @@ someone clicks a name, and re-checks their role server-side before it writes.
 | `src/classify.mjs` | What kind of document is this, and which roster to lean towards |
 | `src/roster.mjs` | Loads clients and staff into one list |
 | `src/queue.mjs` | Stores the source document, writes the queue entry |
+| `src/poll.mjs` | One budgeted pass over the mailbox |
+| `src/resolve.mjs` | Filing and dismissal |
 | `src/graph.mjs` | Minimal Microsoft Graph client |
-| `index.mjs` | The scheduled poll and the two callables |
+| `src/firebase.mjs` | Admin init from a service-account key in an env var |
+| `src/auth.mjs` | ID-token verification and the role check |
 
 ## Why the matcher refuses to decide
 
@@ -67,7 +95,18 @@ cases from the CareTime rosters and the GoFormz title corpus:
 node --test functions/test/
 ```
 
-## Setting up Microsoft Graph
+## Setting it up
+
+### 1. Firebase service account
+
+The functions talk to Firestore and Storage as an admin, so they need a key
+rather than ambient credentials.
+
+1. Firebase console → Project settings → Service accounts → **Generate new private key**
+2. Do not commit it. Paste the JSON into the Netlify variable below — base64 is
+   also accepted, since some dashboards mangle multi-line values.
+
+### 2. Microsoft Graph
 
 The poll runs with nobody signed in, so it uses app-only (client credentials)
 auth rather than delegated.
@@ -78,8 +117,8 @@ auth rather than delegated.
    permissions → `Mail.Read` → Grant admin consent.
 3. **Scope it down.** `Mail.Read` as an application permission grants access to
    **every mailbox in the tenant** by default. Restrict it to the one mailbox
-   with an application access policy, or the credential in Secret Manager is a
-   key to the whole organisation's email:
+   with an application access policy, or that secret is a key to the whole
+   organisation's email:
 
    ```powershell
    New-ApplicationAccessPolicy -AppId <client-id> `
@@ -90,45 +129,49 @@ auth rather than delegated.
 
 4. **Create a client secret** and note the value — it is shown once.
 
-## Deploying
+### 3. Netlify environment variables
 
-Cloud Functions need the **Blaze** (pay-as-you-go) plan. A 30-minute poll of one
-mailbox sits inside the free allowance, but the project has to be on Blaze for
-functions to deploy at all.
+Site settings → Environment variables. All five are required; the poll refuses
+to run with an empty mailbox rather than looking healthy and ingesting nothing.
+
+| Variable | Value |
+|---|---|
+| `FIREBASE_SERVICE_ACCOUNT` | The service-account JSON (or base64 of it) |
+| `FIREBASE_STORAGE_BUCKET` | `dtcapp-24504.firebasestorage.app` |
+| `GRAPH_TENANT_ID` | Directory (tenant) ID |
+| `GRAPH_CLIENT_ID` | Application (client) ID |
+| `GRAPH_CLIENT_SECRET` | The client secret value |
+| `DTC_MAILBOX` | e.g. `intake@daretocarehomecare.com` |
+
+Mark them **secret** where Netlify offers it, and scope them to production.
+
+### 4. Rules and indexes
+
+These still deploy through Firebase, and still need your login:
 
 ```bash
-cd C:\dev\dtc-app
 firebase login
-
-# Secrets — these are not stored in the repo
-firebase functions:secrets:set GRAPH_TENANT_ID
-firebase functions:secrets:set GRAPH_CLIENT_ID
-firebase functions:secrets:set GRAPH_CLIENT_SECRET
-
-cd functions && npm install && cd ..
-firebase deploy --only functions,firestore:rules,firestore:indexes,storage
+firebase deploy --only firestore:rules,firestore:indexes,storage
 ```
 
-Set the mailbox when prompted on first deploy, or in advance:
+`DEPLOY-RULES.bat` does the same thing. Storage is on console defaults until
+this runs — do it before real PHI is filed.
 
-```bash
-firebase functions:config:unset   # not used; DTC_MAILBOX is a params.defineString
-```
+## One thing to check
 
-`DTC_MAILBOX` is a deploy-time parameter — `firebase deploy` will ask for it and
-remember the answer in `.env.dtcapp-24504`. Set it to the mailbox you scoped the
-access policy to. If it is left empty the poll logs an error and does nothing,
-rather than looking healthy while ingesting nothing.
+**Firebase Storage may itself require Blaze.** Projects created after roughly
+October 2024 need the paid plan to use Cloud Storage at all. If `filed/` PDFs
+already work today, the project is fine as-is. If Storage turns out to need
+Blaze, moving the functions to Netlify hasn't avoided the plan — though it has
+made the ingestion portable, and Blaze at this volume stays inside the free
+allowance anyway.
 
-## First run
+## If Netlify's limits ever bite
 
-The first poll looks back 30 days, not all time — enough to prove the pipeline
-works without burying the queue in a year of history. The watermark then lives
-in `metadata/ingestion` and only advances past messages that were fully
-processed, so a run that fails halfway resumes rather than skipping.
-
-The 77-item CERTIFICATIONS folder is a separate, deliberate backfill. It goes
-through the same `enqueue()` and lands in the same queue.
+The library has no Netlify in it. A GitHub Actions cron is the obvious next
+stop — free for private repos up to 2,000 minutes a month, with no execution-time
+cap worth worrying about — and would need only a new entry point calling
+`pollMailbox`.
 
 ## What is deliberately not automatic
 

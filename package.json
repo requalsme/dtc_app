@@ -1,0 +1,13 @@
+{
+  "name": "dtc-app",
+  "private": true,
+  "type": "module",
+  "description": "Dare to Care — forms, filing and compliance. The React app lives in dare-to-care-forms; this root package exists so Netlify can bundle the serverless functions in netlify/functions.",
+  "scripts": {
+    "test": "node --test functions/test/",
+    "build": "cd dare-to-care-forms && npm install && npm run build"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.2"
+  }
+}

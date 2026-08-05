@@ -481,6 +481,10 @@ export const DTCStore = {
     const key = type === "client" ? "clientId" : "caregiverId";
     return state.submissions
       .filter((s) => s[key] === id)
+      // Soft-deleted records stay in the database (see softDeleteSubmission)
+      // but drop out of every ordinary view. Only the dev portal's deleted-
+      // items screen reads getDeletedSubmissions() directly.
+      .filter((s) => !s.deletedAt)
       // A client-subject form belongs to the client, not to the caregiver who
       // filled it in — so it must not also appear in that caregiver's own file.
       .filter((s) => (type === "staff" ? !s.clientId : true))
@@ -661,6 +665,41 @@ export const DTCStore = {
         missing: required.filter((r) => r.status === "missing").length,
       },
     };
+  },
+
+  // ---------------------------------------------------------------------
+  // Soft delete (owner / dev portal only)
+  // ---------------------------------------------------------------------
+  // A filed submission is compliance evidence, so this never physically
+  // erases one — see firestore.rules, which blocks a real delete outright
+  // regardless of who's asking. What this does is stamp it removed-from-view:
+  // who did it, when, and why. Restorable at any time, and still present in
+  // full for an audit even while "deleted." The list a normal person sees
+  // just filters these out.
+  async softDeleteSubmission(id, reason) {
+    await updateDoc(doc(db, "submissions", id), {
+      deletedAt: new Date().toISOString(),
+      deletedBy: state.user?.name || "Dev portal",
+      deletedById: state.user?.id || null,
+      deleteReason: reason || "",
+    });
+    await logAudit("submission_deleted", id, reason || "");
+    await refresh();
+  },
+
+  async restoreSubmission(id) {
+    await updateDoc(doc(db, "submissions", id), {
+      deletedAt: null,
+      deletedBy: null,
+      deletedById: null,
+      deleteReason: null,
+    });
+    await logAudit("submission_restored", id);
+    await refresh();
+  },
+
+  getDeletedSubmissions() {
+    return (state.submissions || []).filter((s) => !!s.deletedAt);
   },
 
   async updateSubmission(id, patch) {

@@ -438,6 +438,71 @@ function SubmissionDetail({ submission, onClose, onToast }: { submission: any; o
   );
 }
 
+// ── Folder checklist summary ─────────────────────────────────────────────────
+// Renders Store.fileChecklistFor() — "is this file complete" — above the raw
+// list of filed documents. The engine (components/file-checklist.js) already
+// existed; this is the first screen that actually shows it to a person.
+
+function ChecklistSummary({ subjectType, subjectId, person }: { subjectType: "client" | "staff"; subjectId: string; person?: any }) {
+  const [, force] = useState(0);
+  useEffect(() => Store.subscribe(() => force((v) => v + 1)), [subjectId]);
+
+  // fileChecklistFor expects the same subjectType convention as
+  // submissionsForSubject/documentsForSubject ("client" or "staff") — it
+  // picks the caregiver vs. client checklist internally from that.
+  const result = Store.fileChecklistFor(subjectType, subjectId, person);
+  const { rows, counts, checklistLabel } = result;
+
+  const groups: { label: string; rows: any[] }[] = [];
+  for (const r of rows) {
+    let g = groups.find((g2) => g2.label === r.groupLabel);
+    if (!g) { g = { label: r.groupLabel, rows: [] }; groups.push(g); }
+    g.rows.push(r);
+  }
+
+  const pct = counts.required ? Math.round((counts.complete / counts.required) * 100) : 100;
+  const chip = (status: string) => {
+    if (status === "complete") return <span className="spill pub"><span className="pip" />Complete</span>;
+    if (status === "expired") return <span className="spill warn"><span className="pip" />Expired</span>;
+    return <span className="spill correction"><span className="pip" />Missing</span>;
+  };
+
+  return (
+    <div className="ds-panel" style={{ padding: 16, marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div>
+          <strong>{checklistLabel}</strong>
+          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>
+            {counts.complete} of {counts.required} required items complete
+            {counts.expired > 0 && ` · ${counts.expired} expired`}
+            {counts.missing > 0 && ` · ${counts.missing} missing`}
+          </div>
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 22, color: pct === 100 ? "var(--accent-deep)" : "var(--ink-2)" }}>{pct}%</div>
+      </div>
+      {groups.map((g) => (
+        <div key={g.label} style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--ink-3)", marginBottom: 4 }}>
+            {g.label}
+          </div>
+          {g.rows.map((r: any) => (
+            <div
+              key={r.id}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}
+            >
+              <span style={{ fontSize: 13 }}>
+                {r.label}
+                {!r.required && <span style={{ color: "var(--ink-4)" }}> (optional)</span>}
+              </span>
+              {chip(r.status)}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Client Directory ────────────────────────────────────────────────────────
 
 function ClientDirectory() {
@@ -484,6 +549,7 @@ function ClientDirectory() {
             Filed documents
           </button>
         </div>
+        <ChecklistSummary subjectType="client" subjectId={openClient.id} />
         <div className="ds-panel" style={{ padding: 16 }}>
           {clientTab === "facts" ? (
             <ClientKeyFacts clientId={openClient.id} />
@@ -570,6 +636,7 @@ function TeamDirectory() {
             <p>Staff file — signed paperwork and acknowledgements for {openStaff.name}.</p>
           </div>
         </div>
+        <ChecklistSummary subjectType="staff" subjectId={openStaff.id} person={openStaff} />
         <div className="ds-panel" style={{ padding: 16 }}>
           <FiledDocuments
             subjectType="staff"

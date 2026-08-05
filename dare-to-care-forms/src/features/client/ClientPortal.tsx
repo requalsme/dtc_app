@@ -23,7 +23,11 @@ export default function ClientPortal() {
     void Store.refresh().catch(() => {});
     const update = () => {
       const uid = user?.id;
-      setSubmissions(Store.getSubmissions().filter((s: any) => s.caregiverId === uid));
+      // A client's own forms are filed with clientId === their own uid (see
+      // submit() below). caregiverId is the staff field — filtering on it here
+      // meant this list could only ever show a client their own HR paperwork,
+      // which clients don't have, so it was permanently empty in production.
+      setSubmissions(Store.getSubmissions().filter((s: any) => s.clientId === uid));
     };
     update();
     return Store.subscribe(update);
@@ -34,7 +38,12 @@ export default function ClientPortal() {
     try {
       await Store.addSubmission({
         schemaKey: schema.key,
-        clientId: null,
+        // Was hardcoded to null, which meant subjectForSubmission() found
+        // neither a clientId nor a caregiverId and returned null — the PDF
+        // was never generated or filed, silently. The client's own uid IS the
+        // client id here (they're signed in as themselves), so this is what
+        // actually identifies whose file the record belongs in.
+        clientId: user?.id || null,
         clientName: user?.name || null,
         values,
         score,

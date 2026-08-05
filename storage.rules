@@ -38,6 +38,31 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Scans and photos attached to a person: driver's licences, I-9s, reference
+    // checks, CAPS/DORA/CBI/E-Verify results, packets signed on paper.
+    //
+    // Separate from the rule above for two reasons. It's one path segment
+    // deeper, so the pattern above genuinely does not match it. And it can't be
+    // PDF-only — a licence is usually photographed on a phone, so images have
+    // to be allowed or the most common upload in the system fails.
+    //
+    // Immutable in the same way and for the same reason: this is the evidence a
+    // surveyor asks for. A wrong scan is superseded by a right one, never
+    // overwritten, so there's always a record of what was actually relied on.
+    match /filed/{subjectType}/{subjectId}/uploads/{fileName} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+                    && subjectType in ['client', 'staff']
+                    && request.resource.size < 25 * 1024 * 1024
+                    && (
+                         request.resource.contentType == 'application/pdf'
+                         || request.resource.contentType.matches('image/(jpeg|png|heic|heif|webp)')
+                       );
+
+      allow update, delete: if false;
+    }
+
     // Documents that arrived from outside the app and have not been filed yet:
     // emailed authorizations, certification results, GoFormz exports. Held here
     // exactly as they arrived, under the unguessable id of their queue entry.

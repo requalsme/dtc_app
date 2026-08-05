@@ -6,6 +6,10 @@ import { auth, db, storage, firebaseConfig } from "../config/firebase";
 // dynamically imported inside utils/pdf itself, which is where the win actually is.
 // @ts-ignore
 import { elementToPdfBlob } from "../utils/pdf";
+// What a complete file has to contain, for a caregiver and for a client.
+// Kept as data next door rather than logic in here, because the checklist
+// changes on a different (and much faster) schedule than this code does.
+import { checklistFor, checklistItems } from "./file-checklist";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 
@@ -55,6 +59,37 @@ async function syncQueue() {
     } catch { /* still offline or server error — leave in queue */ }
   }
   if (synced > 0) await refresh();
+}
+
+// ─── Ingestion endpoints ───────────────────────────────────────────────────
+// The review queue's two actions run server-side, on Netlify functions rather
+// than Firebase Cloud Functions — Cloud Functions need the paid Blaze plan for
+// what amounts to one cron job and two form posts.
+//
+// That means no callable SDK, so identity travels as a Firebase ID token in the
+// Authorization header and the function verifies it. Same-origin, because the
+// app and the functions are served from the same Netlify site.
+async function callIngestion(endpoint, payload) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You are signed out. Sign in again.");
+
+  // Not cached: a stale token is the most common cause of a spurious 401, and
+  // the SDK only refreshes on its own schedule.
+  const token = await user.getIdToken();
+
+  const res = await fetch(`/.netlify/functions/${endpoint}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    // The function always returns { error } on failure, so the reviewer sees
+    // what actually went wrong rather than a status code.
+    throw new Error(body.error || `That didn't work (${res.status}).`);
+  }
+  return body;
 }
 
 // ─── Audit trail (best-effort; never blocks the user action) ────────────────
@@ -179,6 +214,10 @@ const state = {
   users: [],
   tasks: [],
   certificates: [],
+  // Scans and photos attached to a person — licences, I-9s, background check
+  // results, packets signed on paper. The counterpart to `submissions`, which
+  // are the documents the app generated itself.
+  documents: [],
   // Documents that arrived from outside the app and have not been filed yet.
   // Only office managers and admins can read these, so for everyone else this
   // stays empty — see the `inbound` rule in firestore.rules.
@@ -200,6 +239,7 @@ function clearState() {
   state.users = [];
   state.tasks = [];
   state.certificates = [];
+  state.documents = [];
   state.inbound = [];
   emit();
 }
@@ -231,8 +271,11 @@ async function refresh() {
     // read is denied by the rules, which is the intended answer — swallow it so
     // one restricted collection doesn't fail their whole refresh.
     requests.push(fetchCollection("inbound").catch(() => []));
+    // Uploaded scans. Swallowed the same way — a caregiver who can't read the
+    // whole collection shouldn't have their entire refresh fail because of it.
+    requests.push(fetchCollection("documents").catch(() => []));
 
-    const [templates, clients, submissions, tasks, audit, users, certificates, inbound] = await Promise.all(requests);
+    const [templates, clients, submissions, tasks, audit, users, certificates, inbound, documents] = await Promise.all(requests);
     state.templates = (templates || []).map(normalizeTemplate);
     state.clients = clients;
     state.submissions = submissions;
@@ -241,6 +284,7 @@ async function refresh() {
     state.users = users;
     state.certificates = certificates || [];
     state.inbound = inbound || [];
+    state.documents = documents || [];
 
     // Find current user profile
     state.user = users.find(u => u.id === user.uid) || null;
@@ -482,6 +526,143 @@ export const DTCStore = {
     }
   },
 
+  // ---------------------------------------------------------------------
+  // Scanned documents
+  // ---------------------------------------------------------------------
+  // The other half of the filing cabinet. `fileSubmissionPdf` above files
+  // documents the app GENERATED; this files documents the app RECEIVED — a
+  // driver's licence photographed on a phone, a CBI result that arrived as a
+  // PDF, a packet signed on paper before anyone had an app account.
+  //
+  // Both land in the same place under the same person, so a complete file
+  // reads the same whether it was built digitally or out of a paper folder.
+  async uploadDocument(subjectType, subjectId, checklistItemId, file, meta = {}) {
+    if (!file) throw new Error("No file chosen");
+    if (!["client", "staff"].includes(subjectType)) throw new Error("Unknown file type");
+    // 25MB matches the storage rules. A phone photo of a licence is ~3MB, so
+    // anything past this is almost certainly a mistake worth catching early.
+    if (file.size > 25 * 1024 * 1024) throw new Error("File is too large (25MB limit)");
+
+    const safe = String(file.name || "document").replace(/[^\w.\-]+/g, "_").slice(-80);
+    const path = `filed/${subjectType}/${subjectId}/uploads/${Date.now()}__${safe}`;
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, file, { contentType: file.type || "application/octet-stream" });
+    const url = await getDownloadURL(fileRef);
+
+    const record = {
+      subjectType,
+      subjectId,
+      checklistItemId: checklistItemId || null,
+      fileName: file.name || safe,
+      contentType: file.type || "",
+      size: file.size,
+      url,
+      path,
+      // The date on the DOCUMENT, not the date it was scanned. A background
+      // check run in March that gets uploaded in August is still a March
+      // check — and for anything that expires annually, using the upload
+      // date instead would quietly grant an extra five months of validity.
+      documentDate: meta.documentDate || null,
+      note: meta.note || "",
+      uploadedBy: state.user?.name || "Office",
+      uploadedById: state.user?.id || null,
+      uploadedAt: new Date().toISOString(),
+      source: meta.source || "manual-upload",
+    };
+    const created = await addDoc(collection(db, "documents"), record);
+    await logAudit("document_uploaded", record.fileName, subjectId);
+    await refresh();
+    return { id: created.id, ...record };
+  },
+
+  getDocuments() { return (state.documents || []).slice(); },
+
+  documentsForSubject(type, id) {
+    return (state.documents || [])
+      .filter((d) => d.subjectType === type && d.subjectId === id)
+      .sort((a, b) => String(b.uploadedAt || "").localeCompare(String(a.uploadedAt || "")));
+  },
+
+  // ---------------------------------------------------------------------
+  // Is this person's file complete?
+  // ---------------------------------------------------------------------
+  // Walks the checklist and answers, line by line, one of:
+  //
+  //   complete  — satisfied, and not expired
+  //   expired   — WAS satisfied, but the renewal lapsed. Deliberately distinct
+  //               from missing: a lapsed annual recert is a person to chase,
+  //               a missing one is an onboarding gap. Different problems.
+  //   missing   — never satisfied
+  //
+  // Nothing here decides anyone is compliant. It reports what is and isn't in
+  // the folder; a person still reads the documents.
+  fileChecklistFor(subjectType, subjectId, person) {
+    const checklist = checklistFor(subjectType === "client" ? "client" : "caregiver");
+    const items = checklistItems(checklist);
+    const subs = DTCStore.submissionsForSubject(subjectType, subjectId);
+    const docs = DTCStore.documentsForSubject(subjectType, subjectId);
+    const certs = person ? DTCStore.certificatesForUser(person) : [];
+    const now = Date.now();
+
+    const expiredBy = (iso, months) => {
+      if (!months || !iso) return false;
+      const due = new Date(iso);
+      if (Number.isNaN(due.getTime())) return false;
+      due.setMonth(due.getMonth() + months);
+      return due.getTime() < now;
+    };
+
+    const rows = items.map((item) => {
+      const by = item.satisfiedBy || {};
+      let evidence = null;
+      let at = null;
+
+      if (by.type === "form") {
+        const keys = by.anyOf || [by.schemaKey];
+        const hit = subs.find((s) => keys.includes(s.schemaKey));
+        if (hit) { evidence = { kind: "form", id: hit.id, label: hit.templateName || hit.schemaKey, url: hit.pdfUrl || null }; at = hit.submittedAt; }
+      } else if (by.type === "certs") {
+        // Count-agnostic on purpose — "all current modules", never a fixed six.
+        const total = DTCStore.courseModuleCount ? DTCStore.courseModuleCount() : 0;
+        const passed = certs.filter((c) => c.passed !== false).length;
+        if (total > 0 && passed >= total) {
+          const newest = certs.map((c) => c.date).filter(Boolean).sort().pop();
+          evidence = { kind: "certs", label: `${passed} of ${total} modules` };
+          at = newest;
+        } else if (passed > 0) {
+          evidence = null;
+          at = null;
+        }
+      }
+
+      // An upload satisfies ANY line, not just upload-only ones. That's what
+      // lets a paper-signed packet complete a file without re-signing it.
+      if (!evidence) {
+        const up = docs.find((d) => d.checklistItemId === item.id);
+        if (up) { evidence = { kind: "upload", id: up.id, label: up.fileName, url: up.url }; at = up.documentDate || up.uploadedAt; }
+      }
+
+      let status = "missing";
+      if (evidence) status = expiredBy(at, item.renews) ? "expired" : "complete";
+
+      return { ...item, status, evidence, satisfiedAt: at || null };
+    });
+
+    const required = rows.filter((r) => r.required);
+    return {
+      checklistKey: checklist.key,
+      checklistLabel: checklist.label,
+      rows,
+      complete: required.every((r) => r.status === "complete"),
+      counts: {
+        required: required.length,
+        complete: required.filter((r) => r.status === "complete").length,
+        expired: required.filter((r) => r.status === "expired").length,
+        missing: required.filter((r) => r.status === "missing").length,
+      },
+    };
+  },
+
   async updateSubmission(id, patch) {
     const actor = state.user;
     const update = { ...patch };
@@ -653,19 +834,15 @@ export const DTCStore = {
   },
 
   async resolveInbound(inboundId, subjectType, subjectId) {
-    const { getFunctions, httpsCallable } = await import("firebase/functions");
-    const call = httpsCallable(getFunctions(), "resolveInboundDocument");
-    const res = await call({ inboundId, subjectType, subjectId });
+    const data = await callIngestion("resolve-inbound", { inboundId, subjectType, subjectId });
     await refresh();
-    return res.data;
+    return data;
   },
 
   async dismissInbound(inboundId, reason) {
-    const { getFunctions, httpsCallable } = await import("firebase/functions");
-    const call = httpsCallable(getFunctions(), "dismissInboundDocument");
-    const res = await call({ inboundId, reason });
+    const data = await callIngestion("dismiss-inbound", { inboundId, reason });
     await refresh();
-    return res.data;
+    return data;
   },
 
   // Everyone a document could be filed against, in one list, tagged with which
@@ -700,6 +877,24 @@ export const DTCStore = {
     return state.certificates.filter(
       (c) => (c.email && String(c.email).toLowerCase() === email) || c.linkedUserId === user.id
     );
+  },
+
+  // How many course modules currently exist.
+  //
+  // Six today. Raina asked specifically that six not be written down anywhere,
+  // because more courses are coming and a hardcoded six would silently pass
+  // people who'd skipped the new ones. So this counts the distinct modules the
+  // course site has actually issued certificates for, and grows by itself when
+  // a seventh course goes live and the first person completes it.
+  //
+  // Trade-off worth knowing: a brand-new module raises the bar only once
+  // somebody has passed it. That's the safe direction to be wrong in — it can
+  // under-count briefly, never over-count and mark an incomplete file done.
+  courseModuleCount() {
+    const ids = new Set(
+      (state.certificates || []).map((c) => c.courseId).filter(Boolean),
+    );
+    return ids.size;
   },
 
   async linkCertificate(certId, userId) {

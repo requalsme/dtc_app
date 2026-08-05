@@ -114,6 +114,23 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Scanned documents attached to a person — licences, I-9s, background
+    // check results, packets signed on paper.
+    //
+    // Create is staff-only and stamped: a caregiver must not be able to drop a
+    // document into their own file claiming it's a clean CBI result. Vetting
+    // evidence is only worth anything if the person it vets didn't supply it.
+    //
+    // No update and no delete, by anyone. These are evidence. A wrong upload is
+    // superseded by a correct one, never edited away — same rule as submissions.
+    match /documents/{docId} {
+      allow read: if isStaff() || (isSignedIn() && resource.data.subjectId == request.auth.uid);
+      allow create: if isStaff()
+                    && request.resource.data.uploadedById == request.auth.uid
+                    && request.resource.data.subjectType in ['client', 'staff'];
+      allow update, delete: if false;
+    }
+
     match /certificates/{certId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.source == 'course-site';

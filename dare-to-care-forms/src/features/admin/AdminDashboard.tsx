@@ -4,9 +4,9 @@ import { Icon } from "../../components/fields";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store";
 
-function StatCard({ icon, label, value, tone }: { icon: string; label: string; value: number; tone?: string }) {
+function StatCard({ icon, label, value, tone, onClick }: { icon: string; label: string; value: number; tone?: string; onClick?: () => void }) {
   return (
-    <div className={`admin-stat-card${tone ? ` ${tone}` : ""}`}>
+    <div className={`admin-stat-card${tone ? ` ${tone}` : ""}${onClick ? " clickable" : ""}`} onClick={onClick}>
       <div className="admin-stat-icon">
         <Icon n={icon} s={18} />
       </div>
@@ -16,16 +16,20 @@ function StatCard({ icon, label, value, tone }: { icon: string; label: string; v
   );
 }
 
-export function AdminDashboard() {
+export function AdminDashboard({ onNav }: { onNav?: (page: string) => void } = {}) {
   const [submissions, setSubmissions] = useState(Store.getSubmissions());
   const [templates, setTemplates] = useState(Store.getTemplates());
   const [audit, setAudit] = useState(Store.getAudit());
+  const [applicationsPending, setApplicationsPending] = useState(
+    Store.getPendingApplications ? Store.getPendingApplications() : [],
+  );
 
   useEffect(() => {
     return Store.subscribe(() => {
       setSubmissions(Store.getSubmissions());
       setTemplates(Store.getTemplates());
       setAudit(Store.getAudit());
+      setApplicationsPending(Store.getPendingApplications ? Store.getPendingApplications() : []);
     });
   }, []);
 
@@ -64,6 +68,13 @@ export function AdminDashboard() {
         <StatCard icon="users" label="Team accounts" value={Store.getUsers().length} />
         <StatCard icon="fileText" label="Stored submissions" value={submissions.length} tone="soft-green" />
         <StatCard icon="checkCircle" label="Reviewed records" value={reviewed.length} tone="soft-mint" />
+        <StatCard
+          icon="users"
+          label="New applications"
+          value={applicationsPending.length}
+          tone={applicationsPending.length > 0 ? "soft-amber" : ""}
+          onClick={onNav ? () => onNav("applications") : undefined}
+        />
       </div>
 
       <div className="admin-dashboard-grid">

@@ -5,6 +5,8 @@
   "type": "module",
   "main": "index.mjs",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/*.test.mjs",
+    "dryrun": "node dryrun.mjs",
+    "survey": "node survey.mjs"
   }
 }

@@ -186,6 +186,11 @@ function DeletedItems() {
   const [, force] = useState(0);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
+  // Used to live behind window.prompt() after the DELETE confirmation — a
+  // native, synchronous dialog that blocks the page's JS thread until
+  // dismissed. Folded into this same modal instead: one flow, no blocking
+  // browser-chrome dialog to fight with (automation included).
+  const [hardDeleteReason, setHardDeleteReason] = useState("");
   const deleted = Store.getDeletedSubmissions ? Store.getDeletedSubmissions() : [];
 
   const restore = async (id: string) => {
@@ -193,13 +198,12 @@ function DeletedItems() {
     force((v) => v + 1);
   };
 
-  const openConfirm = (id: string) => { setConfirming(id); setTyped(""); };
-  const closeConfirm = () => { setConfirming(null); setTyped(""); };
+  const openConfirm = (id: string) => { setConfirming(id); setTyped(""); setHardDeleteReason(""); };
+  const closeConfirm = () => { setConfirming(null); setTyped(""); setHardDeleteReason(""); };
 
   const confirmHardDelete = async () => {
     if (!confirming) return;
-    const reason = window.prompt("Why is this being permanently deleted? This goes in the audit log.") || "";
-    await Store.hardDeleteSubmission(confirming, reason);
+    await Store.hardDeleteSubmission(confirming, hardDeleteReason);
     closeConfirm();
     force((v) => v + 1);
   };
@@ -257,6 +261,14 @@ function DeletedItems() {
               Unlike everything else in this system, this record will not be recoverable and will not appear
               anywhere again — not even here. A snapshot goes into the audit log, but the document itself is gone.
             </p>
+            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Why is this being permanently deleted?</p>
+            <textarea
+              value={hardDeleteReason}
+              onChange={(e) => setHardDeleteReason(e.target.value)}
+              placeholder="Goes in the audit log."
+              rows={2}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ddd)", marginBottom: 14, font: "inherit", resize: "vertical" }}
+            />
             <p style={{ fontSize: 13, fontWeight: 600 }}>Type DELETE to confirm.</p>
             <input
               value={typed}

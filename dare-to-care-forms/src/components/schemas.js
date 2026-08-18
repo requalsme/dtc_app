@@ -6,6 +6,7 @@ import { getStoredUser } from "../app/auth-storage.js";
 // every screen reads from.
 import { newHireForms } from "./form-defs/new-hire.js";
 import { clientAdmissionForms } from "./form-defs/client-admission.js";
+import { hcaAnnualEvaluationForms } from "./form-defs/hca-annual-evaluation.js";
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
@@ -811,7 +812,7 @@ const baseSchemas = {
 };
 
 // Everything the app can render, in one place.
-const schemas = { ...baseSchemas, ...newHireForms, ...clientAdmissionForms };
+const schemas = { ...baseSchemas, ...newHireForms, ...clientAdmissionForms, ...hcaAnnualEvaluationForms };
 
 // `subject` decides which file a completed form is filed under: "client" forms
 // go on the client's record, "self" forms on the signer's staff record.

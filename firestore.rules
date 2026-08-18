@@ -141,6 +141,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Employment applications, submitted from careers.daretocarehomecare.com
+    // (a separate site, dtc-jobapp) but written into this same Firebase
+    // project's Firestore. Contains an encrypted SSN and other applicant PII,
+    // so read is office-manager-and-above only — same bar as `inbound`.
+    //
+    // Created server-side only, by dtc-jobapp's submit-application function
+    // running under the Admin SDK, which bypasses these rules entirely — a
+    // browser can never create one, which is what stops someone from forging
+    // an application record directly in Firestore.
+    //
+    // Update is narrowed to exactly the review fields. A reviewer can mark an
+    // application reviewed and leave a note; they cannot rewrite what the
+    // applicant actually submitted.
+    match /applications/{applicationId} {
+      allow read: if isStaff();
+      allow create: if false;
+      allow update: if isStaff()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'reviewNote']);
+      allow delete: if false;
+    }
+
     match /tasks/{taskId} {
       allow read: if isSignedIn();
       allow create, delete: if isStaff();

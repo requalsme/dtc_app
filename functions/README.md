@@ -21,6 +21,7 @@ The deployed entry points are **Netlify functions** in `netlify/functions/`:
 | `poll-outlook` | scheduled, `*/15 * * * *` | Pulls new attachments into the queue |
 | `resolve-inbound` | POST | A reviewer files a document against a person |
 | `dismiss-inbound` | POST | Not a compliance record |
+| `preflight-ingestion` | GET | Read-only: is any of this actually configured? |
 
 It was originally written as Firebase Cloud Functions, which require the paid
 **Blaze** plan — for what is, in practice, one cron job and two form posts.
@@ -92,10 +93,47 @@ Run the tests before changing any of the scoring constants — they encode real
 cases from the CareTime rosters and the GoFormz title corpus:
 
 ```bash
-node --test functions/test/
+cd functions && npm test      # 54 tests
 ```
 
+## Seeing what it would do, before it can do anything
+
+```bash
+cd functions && npm run dryrun
+```
+
+Runs the entire pipeline — classify, match, dedupe, watermark, time budget —
+against the real rosters from `migration/*.json` and a stand-in mailbox, and
+prints the queue it would produce. No Firebase, no Graph, no credentials, no
+network, nothing written.
+
+This exists because the pipeline's failure mode is silence. A poll that skips a
+message still returns 200 and still logs "0 queued", which is exactly what a
+genuinely empty mailbox looks like; the difference surfaces during a survey.
+`test/fakes.mjs` holds the stand-ins, and `test/poll.test.mjs` pins the
+behaviour this README promises — the watermark, the dedupe key, the attachment
+filter, and what happens when Graph fails halfway through a run.
+
+## Surveying the real mailbox
+
+```bash
+cd functions && npm run survey        # needs only the Graph credential
+```
+
+Read-only, writes nothing, downloads no attachment contents. Threads Inbox
+against Sent Items and reports what arrives, in what formats, and how often
+something goes back out attached to the same conversation.
+
+Written to answer one question with data rather than memory: *does the agency
+receive documents that have to be signed and returned?* Nothing in this
+pipeline signs anything or sends anything — Graph is granted `Mail.Read` only —
+so whether that gap matters is a question about the mailbox, not the code.
+
 ## Setting it up
+
+**Working through it for the first time? Use [GOING-LIVE.md](./GOING-LIVE.md)** —
+same steps, in order, each one ending in something you can check. What follows
+here is the reference version.
 
 ### 1. Firebase service account
 

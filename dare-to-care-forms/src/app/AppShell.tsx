@@ -21,6 +21,10 @@ const navByRole: Record<Role, NavItem[]> = {
     { to: "/admin", label: "Dashboard", icon: "grid" },
     { to: "/admin/templates", label: "Templates", icon: "layers" },
     { to: "/admin/upload", label: "Upload PDF", icon: "upload" },
+    // Employment applications from careers.daretocarehomecare.com. Visible
+    // to admin as well as office manager — the owner should see these land
+    // without having to switch into an office-manager preview to look.
+    { to: "/admin/applications", label: "Applications", icon: "users" },
     { to: "/admin/users", label: "Users", icon: "users" },
     { to: "/admin/clients", label: "Clients", icon: "clients" },
     { to: "/admin/audit", label: "Audit log", icon: "clock" },
@@ -42,6 +46,7 @@ const navByRole: Record<Role, NavItem[]> = {
     // deciding what a document is and where it belongs — just from the other
     // direction.
     { to: "/office-manager/inbound", label: "Inbound", icon: "upload" },
+    { to: "/office-manager/applications", label: "Applications", icon: "users" },
     { to: "/office-manager/clients", label: "Clients", icon: "clients" },
     { to: "/office-manager/new-hires", label: "New hires", icon: "checkCircle" },
     { to: "/office-manager/team", label: "Team", icon: "users" },
@@ -165,20 +170,22 @@ function NavIcon({ name }: { name: string }) {
 }
 
 function useBadgeCounts(role: Role, userId: string) {
-  const [counts, setCounts] = useState({ corrections: 0, pendingReview: 0, queued: 0, inbound: 0 });
+  const [counts, setCounts] = useState({ corrections: 0, pendingReview: 0, queued: 0, inbound: 0, applications: 0 });
   useEffect(() => {
     const update = () => {
       const subs = Store.getSubmissions();
       const queued = Store.getQueuedSubmissions?.() ?? [];
-      // Only office managers and admins can read the ingestion queue, so for
-      // everyone else this is empty and the badge never appears.
+      // Only office managers and admins can read the ingestion queue and
+      // applications, so for everyone else these are empty and the badges
+      // never appear.
       const inbound = Store.getPendingInbound?.().length ?? 0;
+      const applications = Store.getPendingApplications?.().length ?? 0;
       if (role === "caregiver") {
         const corrections = subs.filter((s: any) => s.caregiverId === userId && s.status === "needsCorrection").length;
-        setCounts({ corrections, pendingReview: 0, queued: queued.length, inbound: 0 });
+        setCounts({ corrections, pendingReview: 0, queued: queued.length, inbound: 0, applications: 0 });
       } else {
         const pendingReview = subs.filter((s: any) => s.status === "submitted").length;
-        setCounts({ corrections: 0, pendingReview, queued: 0, inbound });
+        setCounts({ corrections: 0, pendingReview, queued: 0, inbound, applications });
       }
     };
     const unsub = Store.subscribe(update);
@@ -339,6 +346,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               badge = badges.pendingReview;
             } else if (item.label === "Inbound") {
               badge = badges.inbound;
+            } else if (item.label === "Applications") {
+              badge = badges.applications;
             }
 
             // Course site: hand the user off with a one-time token (no second login).

@@ -8,7 +8,7 @@
 
 import { loadRoster } from "./roster.mjs";
 import { enqueue } from "./queue.mjs";
-import { getToken, listMessagesSince, listAttachments } from "./graph.mjs";
+import * as realGraph from "./graph.mjs";
 
 // Attachment types worth queueing. Everything else on a message is ignored —
 // case managers attach logos, vcards and read receipts, and each one that
@@ -24,11 +24,17 @@ const FIRST_RUN_DAYS = 30;
 /**
  * @param {{db: FirebaseFirestore.Firestore, bucket: any}} ctx
  * @param {{tenantId: string, clientId: string, clientSecret: string, mailbox: string}} cfg
- * @param {{budgetMs?: number, maxMessages?: number}} [opts]
+ * @param {{budgetMs?: number, maxMessages?: number, graph?: object}} [opts]
+ *
+ * `opts.graph` exists so this can be run against a stand-in mailbox. The whole
+ * pipeline downstream of Graph — classify, match, dedupe, watermark, budget —
+ * is the part that can be wrong in ways nobody notices, and it should not need
+ * a tenant, a client secret and real PHI to exercise. See `dryrun.mjs`.
  */
 export async function pollMailbox(ctx, cfg, opts = {}) {
   const { db } = ctx;
-  const { budgetMs = 8000, maxMessages = 25 } = opts;
+  const { budgetMs = 8000, maxMessages = 25, graph = realGraph } = opts;
+  const { getToken, listMessagesSince, listAttachments } = graph;
   const startedAt = Date.now();
   const spent = () => Date.now() - startedAt;
 
@@ -45,7 +51,11 @@ export async function pollMailbox(ctx, cfg, opts = {}) {
 
   const token = await getToken(cfg);
   const roster = await loadRoster(db);
-  const messages = await listMessagesSince(token, cfg.mailbox, since, maxMessages);
+  // Inbox only. Graph's `/messages` covers the whole mailbox — Sent Items,
+  // Deleted Items, Clutter — so an unscoped read would queue every attachment
+  // the agency sent *out* as though it had just arrived, and file DTC's own
+  // outgoing paperwork back onto the records of the people it was about.
+  const messages = await listMessagesSince(token, cfg.mailbox, since, maxMessages, "inbox");
 
   let queued = 0;
   let processed = 0;

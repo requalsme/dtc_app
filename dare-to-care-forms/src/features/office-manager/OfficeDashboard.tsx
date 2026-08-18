@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "../../components/fields";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store";
+import { InboundTile } from "./InboundTile";
 
 function SummaryCard({ icon, label, value, tone, onClick }: { icon: string; label: string; value: number | string; tone?: string; onClick?: () => void }) {
   return (
@@ -14,16 +15,24 @@ function SummaryCard({ icon, label, value, tone, onClick }: { icon: string; labe
   );
 }
 
-export function OfficeDashboard({ onStartForm }: { onStartForm?: () => void }) {
+export function OfficeDashboard({ onStartForm, onNav }: { onStartForm?: () => void; onNav?: (page: string) => void }) {
   const [submissions, setSubmissions] = useState(Store.getSubmissions());
   const [tasks, setTasks] = useState(Store.getTasks ? Store.getTasks() : []);
   const [audit, setAudit] = useState(Store.getAudit());
+  const [inboundPending, setInboundPending] = useState(
+    Store.getPendingInbound ? Store.getPendingInbound() : [],
+  );
+  const [applicationsPending, setApplicationsPending] = useState(
+    Store.getPendingApplications ? Store.getPendingApplications() : [],
+  );
 
   useEffect(() => {
     return Store.subscribe(() => {
       setSubmissions(Store.getSubmissions());
       setTasks(Store.getTasks ? Store.getTasks() : []);
       setAudit(Store.getAudit());
+      setInboundPending(Store.getPendingInbound ? Store.getPendingInbound() : []);
+      setApplicationsPending(Store.getPendingApplications ? Store.getPendingApplications() : []);
     });
   }, []);
 
@@ -53,7 +62,32 @@ export function OfficeDashboard({ onStartForm }: { onStartForm?: () => void }) {
         <SummaryCard icon="inbox" label="Pending review" value={pendingReview.length} tone={pendingReview.length > 0 ? "soft-amber" : ""} />
         <SummaryCard icon="alert" label="Corrections open" value={corrections.length} tone={corrections.length > 0 ? "soft-warn" : ""} />
         <SummaryCard icon="clock" label="Overdue tasks" value={overdueTasks.length} tone={overdueTasks.length > 0 ? "soft-warn" : ""} />
+        {/* Documents that arrived from outside the app. This sits alongside the
+            other counts because it is the same job — work waiting on a person —
+            and because for compliance evidence it is currently the only pipe:
+            CareTime holds no documents at all for the 50 people on the roster. */}
+        <SummaryCard
+          icon="download"
+          label="Waiting to file"
+          value={inboundPending.length}
+          tone={inboundPending.length > 0 ? "soft-amber" : ""}
+          onClick={onNav ? () => onNav("inbound") : undefined}
+        />
+        <SummaryCard
+          icon="users"
+          label="New applications"
+          value={applicationsPending.length}
+          tone={applicationsPending.length > 0 ? "soft-amber" : ""}
+          onClick={onNav ? () => onNav("applications") : undefined}
+        />
         <SummaryCard icon="users" label="Clients in scope" value={Store.clients.length} />
+      </div>
+
+      {/* Above the other panels on purpose. These documents are the ones with a
+          clock on them — an authorization sitting unread is how a start of care
+          slips — and unlike a submission, nothing has happened to them yet. */}
+      <div style={{ marginTop: 20 }}>
+        <InboundTile onOpen={onNav ? () => onNav("inbound") : undefined} />
       </div>
 
       <div className="admin-dashboard-grid">

@@ -11,6 +11,7 @@ import { FiledDocuments } from "../../components/FiledDocuments";
 import { ClientKeyFacts } from "../../components/ClientKeyFacts";
 import { NewHireReview } from "./NewHireReview";
 import { InboundQueue } from "./InboundQueue";
+import { ApplicationsReview } from "./ApplicationsReview";
 import { fmtDate } from "../../utils/format";
 
 const relTime = (iso: string) => {
@@ -757,7 +758,7 @@ function AuditView() {
 
 // ── Main export ─────────────────────────────────────────────────────────────
 
-export function OfficeManagerApp({ page, onToast }: { page: string; onNav: (p: string) => void; onToast: (m: string) => void }) {
+export function OfficeManagerApp({ page, onNav, onToast }: { page: string; onNav: (p: string) => void; onToast: (m: string) => void }) {
   const [viewingSubmission, setViewingSubmission] = useState<any>(null);
   const [showStartForm, setShowStartForm] = useState(false);
 
@@ -780,11 +781,12 @@ export function OfficeManagerApp({ page, onToast }: { page: string; onNav: (p: s
       {page === "clients" && <ClientDirectory />}
       {page === "new-hires" && <NewHireReview onToast={onToast} />}
       {page === "inbound" && <InboundQueue onToast={onToast} />}
+      {page === "applications" && <ApplicationsReview onToast={onToast} />}
       {page === "team" && <TeamDirectory />}
       {page === "audit" && <AuditView />}
-      {page === "dashboard" && <OfficeDashboard onStartForm={() => setShowStartForm(true)} />}
-      {!["submissions", "clients", "new-hires", "inbound", "team", "audit", "dashboard"].includes(page) && (
-        <OfficeDashboard onStartForm={() => setShowStartForm(true)} />
+      {page === "dashboard" && <OfficeDashboard onStartForm={() => setShowStartForm(true)} onNav={onNav} />}
+      {!["submissions", "clients", "new-hires", "inbound", "applications", "team", "audit", "dashboard"].includes(page) && (
+        <OfficeDashboard onStartForm={() => setShowStartForm(true)} onNav={onNav} />
       )}
     </>
   );

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Icon } from "./fields.jsx";
 import { AdminDashboard } from "../features/admin/AdminDashboard.tsx";
+import { ApplicationsReview } from "../features/office-manager/ApplicationsReview.tsx";
 import { DTCStore as Store } from "./store.js";
 import { fmtDate } from "../utils/format.ts";
 import { FormWizard } from "./forms/FormWizard";
@@ -1512,14 +1513,15 @@ function AdminApp({ page, onNav, onToast }) {
   }
 
   switch (page) {
-    case "dashboard": return <AdminDashboard />;
+    case "dashboard": return <AdminDashboard onNav={onNav} />;
     case "templates": return <Templates onEdit={setEditingKey} onNav={onNav} onToast={onToast} />;
     case "upload": return <Upload onImport={(item) => { setImportLib(item); setExtracting(true); }} onUploadFile={setUploadFile} onToast={onToast} />;
     case "users": return <UsersPage onToast={onToast} />;
     case "clients": return <ClientsPage onToast={onToast} />;
     case "audit": return <AuditLog />;
     case "certificates": return <Certificates onToast={onToast} />;
-    default: return <AdminDashboard />;
+    case "applications": return <ApplicationsReview onToast={onToast} />;
+    default: return <AdminDashboard onNav={onNav} />;
   }
 }
 

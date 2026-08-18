@@ -204,6 +204,11 @@ const referenceLibrary = [
   { id: "lib_cec", file: "Emergency_Contacts.pdf", pages: 1, schemaKey: "clientEmergencyContacts" },
   { id: "lib_ccp", file: "Care_Preferences.pdf", pages: 1, schemaKey: "clientCarePreferences" },
   { id: "lib_csat", file: "Satisfaction_Survey.pdf", pages: 1, schemaKey: "clientSatisfaction" },
+
+  // ── HCA Annual Agency Evaluation packet (19pp, uploaded 2026-08-09) ──────
+  { id: "lib_hcaAnnual", file: "HCA_Annual_Agency_Evaluation_FILLABLE.pdf (p.1-18)", pages: 18, schemaKey: "hcaAnnualEvaluation" },
+  { id: "lib_hcaRecordAudit", file: "HCA_Annual_Agency_Evaluation_FILLABLE.pdf (p.16-17)", pages: 2, schemaKey: "consumerRecordAudit" },
+  { id: "lib_hcaProgramTool", file: "HCA_Annual_Agency_Evaluation_FILLABLE.pdf (p.17-18)", pages: 2, schemaKey: "hcaProgramEvaluationTool" },
 ];
 
 const state = {
@@ -222,6 +227,11 @@ const state = {
   // Only office managers and admins can read these, so for everyone else this
   // stays empty — see the `inbound` rule in firestore.rules.
   inbound: [],
+  // Employment applications submitted on careers.daretocarehomecare.com
+  // (dtc-jobapp — a separate site, same Firebase project). Office-manager+
+  // only, same reasoning as inbound — see the `applications` rule in
+  // firestore.rules.
+  applications: [],
   user: null, // Track current user manually from AuthContext if needed
 };
 
@@ -241,6 +251,7 @@ function clearState() {
   state.certificates = [];
   state.documents = [];
   state.inbound = [];
+  state.applications = [];
   emit();
 }
 
@@ -274,8 +285,10 @@ async function refresh() {
     // Uploaded scans. Swallowed the same way — a caregiver who can't read the
     // whole collection shouldn't have their entire refresh fail because of it.
     requests.push(fetchCollection("documents").catch(() => []));
+    // Employment applications — office-manager+ only, swallowed the same way.
+    requests.push(fetchCollection("applications").catch(() => []));
 
-    const [templates, clients, submissions, tasks, audit, users, certificates, inbound, documents] = await Promise.all(requests);
+    const [templates, clients, submissions, tasks, audit, users, certificates, inbound, documents, applications] = await Promise.all(requests);
     state.templates = (templates || []).map(normalizeTemplate);
     state.clients = clients;
     state.submissions = submissions;
@@ -285,6 +298,7 @@ async function refresh() {
     state.certificates = certificates || [];
     state.inbound = inbound || [];
     state.documents = documents || [];
+    state.applications = applications || [];
 
     // Find current user profile
     state.user = users.find(u => u.id === user.uid) || null;
@@ -972,6 +986,56 @@ export const DTCStore = {
         detail: ROLE_LABEL(u.role),
       }));
     return [...clients, ...staff].sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  // ── Employment applications ──────────────────────────────────────────────
+  // Submitted on careers.daretocarehomecare.com (dtc-jobapp), written into
+  // this project's `applications` collection by that site's server function.
+  // This app only ever reads and marks-reviewed — see the `applications` rule
+  // in firestore.rules for why nothing here can create or rewrite one.
+
+  getApplications() { return state.applications.slice(); },
+
+  // Newest first — an applicant queue is read chronologically, unlike inbound
+  // documents which are ranked by how much thinking they need.
+  getPendingApplications() {
+    return state.applications
+      .filter((a) => a.status === "submitted")
+      .sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || "")));
+  },
+
+  async markApplicationReviewed(id, note) {
+    assertWritable();
+    const patch = {
+      status: "reviewed",
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: state.user?.name || auth.currentUser?.email || "Office Manager",
+    };
+    if (note) patch.reviewNote = note;
+    await updateDoc(doc(db, "applications", id), patch);
+    const app = state.applications.find((a) => a.id === id);
+    await logAudit("application_reviewed", app?.applicant || id, note || "");
+    await refresh();
+  },
+
+  // Files (uploads + the rendered PDF packet) live in Netlify Blobs on the
+  // jobapp site, not in this project — there's no gs:// URL to hand back, so
+  // this fetches the bytes through get-application-file.mjs (auth-checked
+  // there too, not just here) and hands back a local object URL to open.
+  async applicationFileUrl(blobKey) {
+    const user = auth.currentUser;
+    if (!user) throw new Error("You are signed out. Sign in again.");
+    const token = await user.getIdToken();
+    const res = await fetch(
+      `https://careers.daretocarehomecare.com/api/application-file?key=${encodeURIComponent(blobKey)}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Could not load file (${res.status}).`);
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
   },
 
   // Certificates (written by the course site; auto-linked to a user by email)

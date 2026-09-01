@@ -37,6 +37,7 @@ const Icon = ({ n, s = 18, sw = 2, style }) => {
     battery: <><rect x="2" y="7" width="18" height="10" rx="2" /><path d="M22 11v2" /></>,
     search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>,
     grid: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
+    list: <><path d="M8 6h13M8 12h13M8 18h13" /><path d="M3 6h.01M3 12h.01M3 18h.01" /></>,
     upload: <><path d="M12 3v12" /><path d="M8 7l4-4 4 4" /><path d="M4 21h16" /></>,
     download: <><path d="M12 3v12" /><path d="M8 11l4 4 4-4" /><path d="M4 21h16" /></>,
     eye: <><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></>,

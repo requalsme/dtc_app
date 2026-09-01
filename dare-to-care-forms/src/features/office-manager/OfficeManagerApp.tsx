@@ -572,7 +572,6 @@ function ClientDirectory() {
       <div className="ds-ph">
         <div>
           <h1>Clients</h1>
-          <p>Shared directory with profile details used for autofill and visit records. Select a client to open their file.</p>
         </div>
       </div>
       <div className="ds-filters">
@@ -655,7 +654,6 @@ function TeamDirectory() {
       <div className="ds-ph">
         <div>
           <h1>Team</h1>
-          <p>Caregiver roster with live submission counts. Select someone to open their staff file.</p>
         </div>
       </div>
       <div className="ds-panel">
@@ -717,7 +715,6 @@ function AuditView() {
       <div className="ds-ph">
         <div>
           <h1>Audit log</h1>
-          <p>Every meaningful event captured for traceability and compliance.</p>
         </div>
       </div>
       <div className="ds-filters">

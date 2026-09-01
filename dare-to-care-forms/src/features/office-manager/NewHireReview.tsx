@@ -185,7 +185,6 @@ export function NewHireReview({ onToast }: { onToast: (m: string) => void }) {
       <div className="ds-ph">
         <div>
           <h1>New hires</h1>
-          <p>Paperwork and course certificates as they arrive. Release training and hire people on from here.</p>
         </div>
       </div>
 

@@ -41,11 +41,7 @@ export function AdminDashboard({ onNav }: { onNav?: (page: string) => void } = {
     <div className="screen">
       <div className="dashboard-hero">
         <div className="dashboard-hero-copy">
-          <span className="dashboard-hero-kicker">Admin command</span>
-          <h2>Keep every form, client, and audit trail moving in sync.</h2>
-          <p>
-            Published templates are live to caregivers, finished records are stored as signed PDFs, and the compliance trail stays visible in one place.
-          </p>
+          <h2>Admin dashboard</h2>
         </div>
         <div className="dashboard-hero-panel">
           <div>

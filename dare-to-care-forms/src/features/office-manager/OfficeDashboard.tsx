@@ -45,9 +45,7 @@ export function OfficeDashboard({ onStartForm, onNav }: { onStartForm?: () => vo
     <div className="screen">
       <div className="dashboard-hero compact">
         <div className="dashboard-hero-copy">
-          <span className="dashboard-hero-kicker">Office oversight</span>
-          <h2>Watch the daily filing pulse and close the loop on every visit record.</h2>
-          <p>Submissions, corrections, and signed PDFs stay centralized so the office can review quickly and keep the care timeline complete.</p>
+          <h2>Office dashboard</h2>
         </div>
         {onStartForm && (
           <div style={{ marginTop: 16 }}>

@@ -91,7 +91,6 @@ function Templates({ onEdit, onNav, onToast }) {
       <div className="ds-ph">
         <div>
           <h1>Templates</h1>
-          <p>Digitized forms move from import to editable draft to published workflow.</p>
         </div>
         <div className="actions">
           {/* Publishing 30+ imported drafts one at a time is a lot of clicking
@@ -230,7 +229,6 @@ function Upload({ onImport, onUploadFile, onToast }) {
       <div className="ds-ph">
         <div>
           <h1>Import Template</h1>
-          <p>Upload any PDF to create an editable template backed by a structured schema, or start from the reference library below.</p>
         </div>
       </div>
       <div
@@ -1022,7 +1020,6 @@ function UsersPage({ onToast }) {
       <div className="ds-ph">
         <div>
           <h1>Users</h1>
-          <p>Manage accounts across all roles — caregivers, office staff, new hires, and clients.</p>
         </div>
       </div>
 
@@ -1147,6 +1144,7 @@ function ClientsPage({ onToast }) {
   const [editClient, setEditClient] = useState(null);
   const [editAssignments, setEditAssignments] = useState([]);
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState("card");
 
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
@@ -1163,8 +1161,8 @@ function ClientsPage({ onToast }) {
   const openEdit = async (client) => {
     setEditClient({ ...client });
     try {
-      const ids = await Store.getClientAssignments(client.id);
-      setEditAssignments(ids);
+      const { assignments } = await Store.getClientAssignments(client.id);
+      setEditAssignments(assignments || []);
     } catch {
       setEditAssignments([]);
     }
@@ -1241,7 +1239,6 @@ function ClientsPage({ onToast }) {
       <div className="ds-ph">
         <div>
           <h1>Clients</h1>
-          <p>Manage the directory that powers autofill, assignments, and stored records.</p>
         </div>
       </div>
 
@@ -1283,30 +1280,67 @@ function ClientsPage({ onToast }) {
         <section className="admin-panel">
           <div className="admin-panel-head">
             <div><h3>Directory</h3><p>{Store.clients.length} clients</p></div>
+            <div className="view-toggle">
+              <button className={viewMode === "card" ? "on" : ""} onClick={() => setViewMode("card")} title="Card view">
+                <Icon n="grid" s={14} />
+              </button>
+              <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")} title="List view">
+                <Icon n="list" s={14} />
+              </button>
+            </div>
           </div>
           <div style={{ padding: "0 16px 12px" }}>
             <input className="ds-search" placeholder="Search clients…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <div className="admin-client-list">
-            {clients.map((client) => (
-              <div className="admin-client-row" key={client.id} style={{ opacity: client.status === "inactive" ? 0.55 : 1 }}>
-                <div className="admin-user-avatar">{client.initials}</div>
-                <div className="admin-user-copy">
-                  <strong>{client.name}</strong>
-                  <span>{client.physician} · {client.phone}</span>
-                  <span>DOB {fmtDate(client.dob)} · MRN {client.mrn}</span>
-                  {client.status === "inactive" && <span style={{ fontSize: 11, color: "var(--amber)" }}>Archived</span>}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <button className="dbtn dbtn-ghost" style={{ padding: "4px 9px", fontSize: 11 }} onClick={() => openEdit(client)}>Edit</button>
+          {clients.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)' }}>No clients found. Add a client using the form on the left.</div>
+          ) : viewMode === "card" ? (
+            <div className="admin-client-grid">
+              {clients.map((client) => (
+                <div
+                  className="admin-client-card"
+                  key={client.id}
+                  style={{ opacity: client.status === "inactive" ? 0.55 : 1 }}
+                  onClick={() => openEdit(client)}
+                >
                   {client.status !== "inactive" && (
-                    <button className="dbtn dbtn-ghost" style={{ padding: "4px 9px", fontSize: 11, color: "var(--amber)" }} onClick={() => doArchive(client)}>Archive</button>
+                    <button
+                      className="admin-client-card-archive"
+                      title="Archive"
+                      onClick={(e) => { e.stopPropagation(); doArchive(client); }}
+                    >
+                      <Icon n="x" s={12} />
+                    </button>
                   )}
+                  <div className="admin-user-avatar card">{client.initials}</div>
+                  <strong>{client.name}</strong>
+                  <span className="meta">{client.phone || "No phone on file"}</span>
+                  <span className="meta">DOB {fmtDate(client.dob)}</span>
+                  {client.status === "inactive" && <span className="archived-pip">Archived</span>}
                 </div>
-              </div>
-            ))}
-            {clients.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)' }}>No clients found. Add a client using the form on the left.</div>}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="admin-client-list">
+              {clients.map((client) => (
+                <div className="admin-client-row" key={client.id} style={{ opacity: client.status === "inactive" ? 0.55 : 1 }}>
+                  <div className="admin-user-avatar">{client.initials}</div>
+                  <div className="admin-user-copy">
+                    <strong>{client.name}</strong>
+                    <span>{client.physician} · {client.phone}</span>
+                    <span>DOB {fmtDate(client.dob)} · MRN {client.mrn}</span>
+                    {client.status === "inactive" && <span style={{ fontSize: 11, color: "var(--amber)" }}>Archived</span>}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <button className="dbtn dbtn-ghost" style={{ padding: "4px 9px", fontSize: 11 }} onClick={() => openEdit(client)}>Edit</button>
+                    {client.status !== "inactive" && (
+                      <button className="dbtn dbtn-ghost" style={{ padding: "4px 9px", fontSize: 11, color: "var(--amber)" }} onClick={() => doArchive(client)}>Archive</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -1354,7 +1388,6 @@ function AuditLog() {
       <div className="ds-ph">
         <div>
           <h1>Audit log</h1>
-          <p>Immutable record of sign-ins, submissions, reviews, and template changes.</p>
         </div>
         <div className="actions">
           <button className="dbtn dbtn-ghost" onClick={exportCSV}>
@@ -1423,7 +1456,6 @@ function Certificates({ onToast }) {
       <div className="ds-ph">
         <div>
           <h1>Certificates</h1>
-          <p>Training completions from courses.daretocarehomecare.com. Match each certificate to the right team member.</p>
         </div>
       </div>
       <div className="ds-panel">

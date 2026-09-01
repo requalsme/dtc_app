@@ -1109,7 +1109,13 @@ export const DTCStore = {
 
   async getClientAssignments(clientId) {
     const client = state.clients.find(c => c.id === clientId);
-    return { assignments: client?.assignedUsers || [] };
+    const raw = client?.assignedUsers;
+    // Older/imported client records can have assignedUsers stored as a
+    // map (e.g. { [caregiverId]: true }) instead of an array of ids.
+    // Normalize either shape to a plain array so callers can always
+    // safely call .includes()/.filter() on the result.
+    const assignments = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.keys(raw) : [];
+    return { assignments };
   },
 
   // Training

@@ -18,6 +18,7 @@ export const RETIRED_PAGE_COPY = {
   "templates.upload": "Upload any PDF to create an editable template backed by a structured schema, or start from the reference library below.",
   "users.page": "Manage accounts across all roles — caregivers, office staff, new hires, and clients.",
   "clients.page": "Manage the directory that powers autofill, assignments, and stored records.",
+  "clients.addForm": "Create a new client profile and assign caregivers.",
   "audit.page": "Immutable record of sign-ins, submissions, reviews, and template changes.",
   "certificates.page": "Training completions from courses.daretocarehomecare.com. Match each certificate to the right team member.",
 } as const;

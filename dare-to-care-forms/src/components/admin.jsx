@@ -1244,7 +1244,7 @@ function ClientsPage({ onToast }) {
 
       <div className="admin-form-grid">
         <section className="admin-panel">
-          <div className="admin-panel-head"><div><h3>Add client</h3><p>Create a new client profile and assign caregivers.</p></div></div>
+          <div className="admin-panel-head"><div><h3>Add client</h3></div></div>
           <div className="admin-form-stack">
             <input className="insp-input" placeholder="Client name *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <div className="admin-form-row">

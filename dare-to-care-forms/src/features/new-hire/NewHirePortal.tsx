@@ -4,6 +4,8 @@ import { useAuth } from "../../app/AuthContext";
 import { DTCStore as Store } from "../../components/store";
 // @ts-ignore
 import { Icon } from "../../components/fields";
+// @ts-ignore
+import { TRAINING_MODULES } from "../../components/trainingModules";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate } from "../../utils/format";
 
@@ -39,16 +41,11 @@ export function paperworkComplete(filedKeys: Set<string>) {
   return singlesDone && pairsDone;
 }
 
-// These ids/titles must match window.DTC_COURSES in the dtccourses repo exactly —
-// they're how a completed course certificate gets matched back to a checklist step.
-const TRAINING_MODULES = [
-  { id: "emergency", title: "Emergency Preparedness & Disaster Planning", desc: "Proactive plans, risk assessment, supplies, and communication to keep clients safe during unexpected events.", minutes: 4 },
-  { id: "home-safety", title: "Home Safety", desc: "Prevent accidents and create a secure environment — hazards, bathroom and kitchen safety, and medication management.", minutes: 3 },
-  { id: "abuse", title: "Abuse & Neglect Prevention", desc: "Identify high-risk situations, recognize warning signs, and protect clients from abuse, neglect, and exploitation.", minutes: 3 },
-  { id: "first-aid", title: "Basic First Aid", desc: "Handle common emergencies — cuts, burns, choking, bleeding — and know when to call for professional help.", minutes: 4 },
-  { id: "infection", title: "Infection Control & Universal Precautions", desc: "Standard precautions for every client — hand hygiene, PPE, sharps safety, and proper cleaning and disinfection.", minutes: 6 },
-  { id: "rights", title: "Consumer Rights & Behavior Management", desc: "Uphold client rights and ethical behavior management — privacy, informed consent, choice, dignity, and respect.", minutes: 5 },
-];
+// TRAINING_MODULES now lives in components/trainingModules.js (imported
+// above) so NewHirePortal and the admin Certificates panel share one list
+// instead of drifting out of sync. Its ids/titles must match
+// window.DTC_COURSES in the dtccourses repo exactly — that's how a
+// completed course certificate gets matched back to a checklist step.
 
 type OnboardingStep = {
   id: string;

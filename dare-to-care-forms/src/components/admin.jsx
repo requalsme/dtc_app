@@ -6,6 +6,7 @@ import { DTCStore as Store } from "./store.js";
 import { fmtDate } from "../utils/format.ts";
 import { FormWizard } from "./forms/FormWizard";
 import { extractSchemaFromPdf } from "../utils/pdfExtract.ts";
+import { TRAINING_MODULES } from "./trainingModules.js";
 
 const relTime = (iso) => {
   if (!iso) return "—";
@@ -831,14 +832,6 @@ const ROLE_COLORS = {
   client: "#8b5cf6",
 };
 
-const TRAINING_MODULES = [
-  { id: "emergency", title: "Emergency Preparedness & Disaster Planning" },
-  { id: "home_safety", title: "Home Safety" },
-  { id: "first_aid", title: "First Aid & Basic Life Safety" },
-  { id: "infection", title: "Infection Control" },
-  { id: "consumer_rights", title: "Consumer Rights & Responsibilities" },
-];
-
 function UsersPage({ onToast }) {
   const [, force] = useState(0);
   const [form, setForm] = useState({ name: "", email: "", role: "caregiver", password: "" });
@@ -848,21 +841,14 @@ function UsersPage({ onToast }) {
   const [createdUser, setCreatedUser] = useState(null); // shown in success modal
   const [showPass, setShowPass] = useState(false);
   const [loadingPwd, setLoadingPwd] = useState(false);
-  const [trainingProgress, setTrainingProgress] = useState(null);
-  const [loadingTraining, setLoadingTraining] = useState(false);
 
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
-  useEffect(() => {
-    if (!editUser || editUser.role !== "newHire") { setTrainingProgress(null); return; }
-    let cancelled = false;
-    setLoadingTraining(true);
-    Store.getUserTrainingProgress(editUser.id)
-      .then((data) => { if (!cancelled) setTrainingProgress(data.progress); })
-      .catch(() => { if (!cancelled) setTrainingProgress(null); })
-      .finally(() => { if (!cancelled) setLoadingTraining(false); });
-    return () => { cancelled = true; };
-  }, [editUser]);
+  // Training completion is certificate-driven (issued by the course site,
+  // matched back by email) — there's no separate in-app progress to fetch,
+  // so this is synchronous off Store's already-loaded certificates.
+  const editUserCerts = editUser ? Store.certificatesForUser(editUser) : [];
+  const certByCourseId = new Map(editUserCerts.map((c) => [c.courseId, c]));
 
   const users = Store.getUsers();
   const filtered = users.filter((u) => {
@@ -983,28 +969,25 @@ function UsersPage({ onToast }) {
               {editUser.role === "newHire" && (
                 <div style={{ marginTop: 16 }}>
                   <div className="form-label" style={{ marginBottom: 8 }}>Training progress</div>
-                  {loadingTraining ? (
-                    <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>Loading…</div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {TRAINING_MODULES.map((m) => {
-                        const completedAt = trainingProgress?.[m.id];
-                        return (
-                          <div key={m.id} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "8px 12px", borderRadius: 10,
-                            background: completedAt ? "rgba(47,138,104,0.07)" : "rgba(0,0,0,0.03)",
-                            border: `1px solid ${completedAt ? "rgba(47,138,104,0.2)" : "rgba(0,0,0,0.06)"}`,
-                          }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>{m.title}</span>
-                            <span style={{ fontSize: 11.5, fontWeight: 700, color: completedAt ? "var(--accent-2)" : "var(--ink-3)" }}>
-                              {completedAt ? `✓ ${relTime(completedAt)}` : "Not started"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {TRAINING_MODULES.map((m) => {
+                      const cert = certByCourseId.get(m.id);
+                      const passed = cert && cert.passed !== false;
+                      return (
+                        <div key={m.id} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "8px 12px", borderRadius: 10,
+                          background: passed ? "rgba(47,138,104,0.07)" : "rgba(0,0,0,0.03)",
+                          border: `1px solid ${passed ? "rgba(47,138,104,0.2)" : "rgba(0,0,0,0.06)"}`,
+                        }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>{m.title}</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: passed ? "var(--accent-2)" : "var(--ink-3)" }}>
+                            {passed ? `✓ ${relTime(cert.date)}` : "Not started"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

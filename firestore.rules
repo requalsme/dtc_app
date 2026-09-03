@@ -82,7 +82,7 @@ service cloud.firestore {
     }
 
     match /submissions/{submissionId} {
-      allow read: if isSignedIn();
+      allow read: if isStaff() || (isSignedIn() && resource.data.caregiverId == request.auth.uid);
 
       // Anyone signed in may file a form; it must arrive as "submitted" and
       // stamped with its author, so a record can't be back-dated or attributed

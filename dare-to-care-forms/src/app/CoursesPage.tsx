@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../config/firebase';
+// @ts-ignore - JS module without types
+import { fetchAll } from '../lib/db.js';
 import { VideoPlayer } from '../components/ui/VideoPlayer';
 
 interface Course {
   id: string;
   title: string;
   description: string;
-  videoPath: string; // Firebase storage path e.g. "courses/intro.mp4"
+  videoPath: string; // Storage object path, e.g. "intro.mp4" in the courses bucket
 }
 
 export default function CoursesPage() {
@@ -18,8 +18,7 @@ export default function CoursesPage() {
   useEffect(() => {
     async function fetchCourses() {
       try {
-        const snap = await getDocs(collection(db, "courses"));
-        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Course[];
+        const data = (await fetchAll("courses")) as Course[];
         setCourses(data);
         if (data.length > 0) {
           setSelectedCourse(data[0]); // Select first by default
@@ -38,7 +37,7 @@ export default function CoursesPage() {
     <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
       <h1>Course Videos</h1>
       <p style={{ color: '#6b7280', marginBottom: '2rem' }}>
-        Watch training videos securely streamed from Firebase Storage.
+        Watch training videos securely streamed from Supabase Storage.
       </p>
 
       {loading ? (
@@ -52,7 +51,7 @@ export default function CoursesPage() {
       ) : courses.length === 0 ? (
         <div style={{ padding: '2rem', background: '#f3f4f6', borderRadius: '8px', textAlign: 'center' }}>
           <h3>No Courses Found</h3>
-          <p>You can upload course videos to Firebase Storage and add them to the 'courses' Firestore collection.</p>
+          <p>You can upload course videos to the 'courses' storage bucket and add a row to the 'courses' table.</p>
         </div>
       ) : (
         <div style={{ display: 'flex', gap: '2.5rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>

@@ -164,14 +164,14 @@ function SystemHealth() {
               detail={moduleCount > 0 ? `${moduleCount} module(s) — this is the number the checklist requires, not a fixed six.` : "No certificates recorded yet, so nothing to count."}
             />
             <StatusRow
-              label="Firebase Storage rules deployed"
+              label="Storage policies applied"
               status="manual"
-              detail="Not readable from the browser. Firebase console → Storage → Rules. Run DEPLOY-RULES.bat if it still shows the console defaults."
+              detail="Not readable from the browser. Supabase dashboard → SQL editor: run supabase/storage.sql. These now check the caller's role against the users table, which the old Firebase rules could not do."
             />
             <StatusRow
-              label="Anonymous auth enabled"
+              label="Anonymous sign-ins enabled"
               status="manual"
-              detail="Certificates from the course site depend on this and fail silently without it. Firebase console → Authentication → Sign-in method → Anonymous."
+              detail="Certificates from the course site depend on this and fail silently without it. Supabase dashboard → Authentication → Providers → Anonymous sign-ins."
             />
           </tbody>
         </table>

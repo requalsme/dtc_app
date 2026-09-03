@@ -14,8 +14,8 @@
 // so it is safe to run against production.
 //
 // Guarded by a shared key rather than a signed-in reviewer, deliberately. The
-// whole point is to be able to run it when Firebase itself is misconfigured,
-// and reviewer auth needs Firebase to work. Set PREFLIGHT_KEY in Netlify; with
+// whole point is to be able to run it when Supabase itself is misconfigured,
+// and reviewer auth needs Supabase to work. Set PREFLIGHT_KEY in Netlify; with
 // it unset the endpoint refuses to run rather than defaulting to open, because
 // its output is a map of what is and isn't configured.
 
@@ -33,29 +33,29 @@ export default async function handler(request) {
     return json({ error: "Not authorised." }, 401);
   }
 
-  // Firestore and Storage are checked only if a handle can be built at all.
+  // The database and Storage are checked only if a client can be built at all.
   // Failing to build one is itself a finding, not a crash.
   let ctx = {};
-  let firebaseError = null;
+  let credentialError = null;
   try {
-    const { firebase } = await import("../../functions/src/firebase.mjs");
-    ctx = firebase();
+    const { supabaseAdmin } = await import("../../functions/src/supabase.mjs");
+    ctx = supabaseAdmin();
   } catch (err) {
-    firebaseError = String(err?.message || err);
+    credentialError = String(err?.message || err);
   }
 
   const result = await preflight(ctx);
 
-  if (firebaseError) {
+  if (credentialError) {
     result.ready = false;
     result.checks.push({
-      name: "Firebase credentials",
+      name: "Supabase credentials",
       status: "failed",
-      detail: firebaseError,
-      fix: "FIREBASE_SERVICE_ACCOUNT must hold the service-account JSON, or base64 of it. " +
-        "Some dashboards mangle multi-line values on paste — base64 avoids that.",
+      detail: credentialError,
+      fix: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set in Netlify. " +
+        "Find them in the Supabase dashboard under Project settings → API.",
     });
-    result.nextStep ||= `Firebase credentials: ${firebaseError}`;
+    result.nextStep ||= `Supabase credentials: ${credentialError}`;
   }
 
   // 200 either way. This endpoint succeeded at its job even when the answer is

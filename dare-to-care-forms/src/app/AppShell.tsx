@@ -3,9 +3,9 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, type Role } from "./AuthContext";
 // @ts-ignore
 import { DTCStore as Store } from "../components/store";
-import { linkWithPhoneNumber, RecaptchaVerifier, type ConfirmationResult } from "firebase/auth";
-import { auth, db } from "../config/firebase";
-import { doc, updateDoc } from "firebase/firestore";
+import { supabase } from "../config/supabase";
+// @ts-ignore - JS module without types
+import { update } from "../lib/db.js";
 interface NavItem {
   to: string;
   label: string;
@@ -205,7 +205,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [showLinkPhone, setShowLinkPhone] = useState(false);
   const [phoneToLink, setPhoneToLink] = useState("");
   const [linkCode, setLinkCode] = useState("");
-  const [linkConfirmation, setLinkConfirmation] = useState<ConfirmationResult | null>(null);
+  // Holds the phone number a code was just sent to; presence of a value is what
+  // switches the modal from "enter number" to "enter code".
+  const [linkConfirmation, setLinkConfirmation] = useState<{ phone: string } | null>(null);
   const [isLinking, setIsLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
@@ -216,24 +218,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setLinkConfirmation(null);
     setPhoneToLink("");
     setLinkCode("");
-    setTimeout(() => {
-      if (!(window as any).recaptchaVerifierLink) {
-        (window as any).recaptchaVerifierLink = new RecaptchaVerifier(auth, 'recaptcha-link-container', {
-          size: 'invisible',
-        });
-      }
-    }, 100);
+    // No reCAPTCHA to prepare — that was a Firebase phone-auth requirement.
   };
 
+  // Attaching a phone to an existing account. Firebase called this "linking" a
+  // credential; Supabase models it as changing the user's phone attribute,
+  // which then has to be confirmed by an SMS code before it takes effect. Same
+  // two-step flow from the person's point of view.
   const handleSendLinkCode = async () => {
     setIsLinking(true);
     setLinkError(null);
     try {
-      if (!auth.currentUser) throw new Error("Not logged in");
-      const appVerifier = (window as any).recaptchaVerifierLink;
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error("Not logged in");
       const formattedPhone = phoneToLink.startsWith("+") ? phoneToLink : `+1${phoneToLink.replace(/\D/g, "")}`;
-      const result = await linkWithPhoneNumber(auth.currentUser, formattedPhone, appVerifier);
-      setLinkConfirmation(result);
+      const { error } = await supabase.auth.updateUser({ phone: formattedPhone });
+      if (error) throw new Error(error.message);
+      setLinkConfirmation({ phone: formattedPhone } as any);
     } catch (err: any) {
       setLinkError(err.message || "Failed to send code.");
     } finally {
@@ -245,9 +246,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setIsLinking(true);
     setLinkError(null);
     try {
-      const result = await linkConfirmation!.confirm(linkCode);
-      // Success, update firestore
-      await updateDoc(doc(db, "users", result.user.uid), { phone: result.user.phoneNumber });
+      const formattedPhone = phoneToLink.startsWith("+") ? phoneToLink : `+1${phoneToLink.replace(/\D/g, "")}`;
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: formattedPhone,
+        token: linkCode,
+        type: 'phone_change',
+      });
+      if (error) throw new Error(error.message);
+
+      // Mirror it onto the profile row, which is what the rest of the app reads.
+      await update("users", data.user!.id, { phone: data.user!.phone });
       setShowLinkPhone(false);
       alert("Phone number linked successfully! You can now log in using your phone number.");
     } catch (err: any) {
@@ -504,7 +512,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     disabled={isLinking}
                   />
                 </label>
-                <div id="recaptcha-link-container"></div>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '1.5rem' }}>
                   <button className="dbtn dbtn-secondary" onClick={() => setShowLinkPhone(false)}>Cancel</button>
                   <button className="dbtn dbtn-primary" onClick={handleSendLinkCode} disabled={isLinking || !phoneToLink}>

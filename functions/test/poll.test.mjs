@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { pollMailbox } from "../src/poll.mjs";
-import { fakeDb, fakeBucket, fakeGraph, message } from "./fakes.mjs";
+import { fakeSupabase, fakeGraph, message } from "./fakes.mjs";
 
 const CFG = {
   tenantId: "t",
@@ -39,13 +39,27 @@ const ROSTER_SEED = {
   },
 };
 
+// Every fixture below is dated in August 2026. The poll's first run, with no
+// watermark, only looks back FIRST_RUN_DAYS — so once the real calendar moved
+// past that window the fixtures fell outside it and every test queued nothing.
+// Seeding a watermark well before the fixtures pins the window explicitly, so
+// these tests exercise the pipeline rather than the current date. The one test
+// that cares about a watermark moving backwards overwrites this itself.
+const WATERMARK_SEED = {
+  app_metadata: { ingestion: { outlookWatermark: "2026-07-01T00:00:00Z" } },
+};
+
 function ctx(seed = {}) {
-  const db = fakeDb({ ...structuredClone(ROSTER_SEED), ...seed });
-  return { db, bucket: fakeBucket() };
+  const sb = fakeSupabase({
+    ...structuredClone(ROSTER_SEED),
+    ...structuredClone(WATERMARK_SEED),
+    ...seed,
+  });
+  return { sb };
 }
 
 test("queues an attachment and records where it came from", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph([
     message("m1", "2026-08-01T10:00:00Z", {
       subject: "CBI result",
@@ -53,23 +67,26 @@ test("queues an attachment and records where it came from", async () => {
     }),
   ]);
 
-  const result = await pollMailbox({ db, bucket }, CFG, { graph });
+  const result = await pollMailbox({ sb }, CFG, { graph });
 
   assert.equal(result.queued, 1);
   assert.equal(result.processed, 1);
 
-  const [entry] = db._collection("inbound");
+  const [entry] = sb._collection("inbound");
   assert.equal(entry.source, "email");
   assert.equal(entry.status, "pending");
   assert.equal(entry.docType, "backgroundCheck");
   // The source document is kept, not just the parsed fields. A surveyor wants
   // the PDF, not a row saying "passed".
   assert.ok(entry.sourcePath, "the source document should be stored");
-  assert.ok(entry.sourceUrl?.includes("token="), "a download token should be minted");
+  // No stored URL any more. Firebase needed a permanent download token baked
+  // into the record; the reviewer's own session now signs a short-lived URL
+  // when they open the document, so there is no durable bearer link at rest.
+  assert.equal(entry.sourceUrl, undefined, "no permanent URL should be stored");
 });
 
 test("a full first-and-last name match is confident; a surname plus initial is not", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph([
     message("m1", "2026-08-01T10:00:00Z", {
       attachments: [
@@ -79,9 +96,9 @@ test("a full first-and-last name match is confident; a surname plus initial is n
     }),
   ]);
 
-  await pollMailbox({ db, bucket }, CFG, { graph });
+  await pollMailbox({ sb }, CFG, { graph });
 
-  const byName = Object.fromEntries(db._collection("inbound").map((e) => [e.fileName, e]));
+  const byName = Object.fromEntries(sb._collection("inbound").map((e) => [e.fileName, e]));
   assert.equal(byName["Care Plan - Clarence Archuleta.pdf"].confidence, "confident");
 
   // Debra Hardman (client) and Dean Hardman (staff) both fit. This must never
@@ -95,7 +112,7 @@ test("a full first-and-last name match is confident; a surname plus initial is n
 });
 
 test("the watermark advances only past messages that fully succeeded", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph(
     [
       message("m1", "2026-08-01T10:00:00Z", {
@@ -111,72 +128,72 @@ test("the watermark advances only past messages that fully succeeded", async () 
     { failOnMessageId: "m2" },
   );
 
-  const result = await pollMailbox({ db, bucket }, CFG, { graph });
+  const result = await pollMailbox({ sb }, CFG, { graph });
 
   assert.match(result.stoppedEarly, /error on message m2/);
   // Stopped at m2, so the watermark sits at m1. m2 and m3 are retried next run.
   assert.equal(result.watermark, "2026-08-01T10:00:00Z");
   assert.equal(result.processed, 1);
 
-  const state = (await db.collection("metadata").doc("ingestion").get()).data();
+  const [state] = sb._collection("app_metadata");
   assert.equal(state.outlookWatermark, "2026-08-01T10:00:00Z");
 });
 
 test("a second run resumes from the watermark and re-queues nothing", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const messages = [
     message("m1", "2026-08-01T10:00:00Z", {
       attachments: [{ id: "a1", name: "Care Plan - Clarence Archuleta.pdf" }],
     }),
   ];
 
-  const first = await pollMailbox({ db, bucket }, CFG, { graph: fakeGraph(messages) });
-  const second = await pollMailbox({ db, bucket }, CFG, { graph: fakeGraph(messages) });
+  const first = await pollMailbox({ sb }, CFG, { graph: fakeGraph(messages) });
+  const second = await pollMailbox({ sb }, CFG, { graph: fakeGraph(messages) });
 
   assert.equal(first.queued, 1);
   assert.equal(second.queued, 0, "the watermark should exclude an already-seen message");
-  assert.equal(db._collection("inbound").length, 1);
+  assert.equal(sb._collection("inbound").length, 1);
 });
 
 test("re-queueing the same attachment updates one entry rather than duplicating it", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const messages = [
     message("m1", "2026-08-01T10:00:00Z", {
       attachments: [{ id: "a1", name: "Care Plan - Clarence Archuleta.pdf" }],
     }),
   ];
 
-  await pollMailbox({ db, bucket }, CFG, { graph: fakeGraph(messages) });
+  await pollMailbox({ sb }, CFG, { graph: fakeGraph(messages) });
   // Simulate a watermark that slipped backwards — a redeploy, a restored
   // backup, a manual reset. The dedupe key is what makes that survivable.
-  await db.collection("metadata").doc("ingestion").set({ outlookWatermark: "2026-01-01T00:00:00Z" });
-  await pollMailbox({ db, bucket }, CFG, { graph: fakeGraph(messages) });
+  await sb.from("app_metadata").upsert({ id: "ingestion", data: { outlookWatermark: "2026-01-01T00:00:00Z" } });
+  await pollMailbox({ sb }, CFG, { graph: fakeGraph(messages) });
 
-  assert.equal(db._collection("inbound").length, 1, "same document, same entry");
+  assert.equal(sb._collection("inbound").length, 1, "same document, same entry");
 });
 
 test("an entry a person has already resolved is never queued back", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const messages = [
     message("m1", "2026-08-01T10:00:00Z", {
       attachments: [{ id: "a1", name: "Care Plan - Clarence Archuleta.pdf" }],
     }),
   ];
 
-  await pollMailbox({ db, bucket }, CFG, { graph: fakeGraph(messages) });
-  const [entry] = db._collection("inbound");
-  await db.collection("inbound").doc(entry.id).update({ status: "resolved" });
+  await pollMailbox({ sb }, CFG, { graph: fakeGraph(messages) });
+  const [entry] = sb._collection("inbound");
+  await sb.from("inbound").update({ status: "resolved" }).eq("id", entry.id);
 
-  await db.collection("metadata").doc("ingestion").set({ outlookWatermark: "2026-01-01T00:00:00Z" });
-  await pollMailbox({ db, bucket }, CFG, { graph: fakeGraph(messages) });
+  await sb.from("app_metadata").upsert({ id: "ingestion", data: { outlookWatermark: "2026-01-01T00:00:00Z" } });
+  await pollMailbox({ sb }, CFG, { graph: fakeGraph(messages) });
 
-  const after = db._collection("inbound");
+  const after = sb._collection("inbound");
   assert.equal(after.length, 1);
   assert.equal(after[0].status, "resolved", "a resolved decision must not be reopened");
 });
 
 test("signature logos, vcards and oversized files never reach a reviewer", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph([
     message("m1", "2026-08-01T10:00:00Z", {
       attachments: [
@@ -188,14 +205,14 @@ test("signature logos, vcards and oversized files never reach a reviewer", async
     }),
   ]);
 
-  const result = await pollMailbox({ db, bucket }, CFG, { graph });
+  const result = await pollMailbox({ sb }, CFG, { graph });
 
   assert.equal(result.queued, 1, "only the real document should be queued");
-  assert.equal(db._collection("inbound")[0].fileName, "Care Plan - Clarence Archuleta.pdf");
+  assert.equal(sb._collection("inbound")[0].fileName, "Care Plan - Clarence Archuleta.pdf");
 });
 
 test("the time budget stops the run politely instead of being killed", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph(
     [
       message("m1", "2026-08-01T10:00:00Z", {
@@ -211,7 +228,7 @@ test("the time budget stops the run politely instead of being killed", async () 
     { delayMs: 40 },
   );
 
-  const result = await pollMailbox({ db, bucket }, CFG, { graph, budgetMs: 50 });
+  const result = await pollMailbox({ sb }, CFG, { graph, budgetMs: 50 });
 
   assert.equal(result.stoppedEarly, "time budget");
   assert.ok(result.processed >= 1 && result.processed < 3, "some work done, not all");
@@ -220,15 +237,15 @@ test("the time budget stops the run politely instead of being killed", async () 
 });
 
 test("an unset mailbox fails loudly rather than looking like an empty inbox", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   await assert.rejects(
-    () => pollMailbox({ db, bucket }, { ...CFG, mailbox: "" }, { graph: fakeGraph([]) }),
+    () => pollMailbox({ sb }, { ...CFG, mailbox: "" }, { graph: fakeGraph([]) }),
     /DTC_MAILBOX is not set/,
   );
 });
 
 test("mail the agency sent is never treated as mail that arrived", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph([
     message("m1", "2026-08-01T10:00:00Z", {
       subject: "Referral received",
@@ -245,15 +262,15 @@ test("mail the agency sent is never treated as mail that arrived", async () => {
     }),
   ]);
 
-  const result = await pollMailbox({ db, bucket }, CFG, { graph });
+  const result = await pollMailbox({ sb }, CFG, { graph });
 
   assert.deepEqual(graph.calls.folders, ["inbox"], "the poll must ask for the inbox by name");
   assert.equal(result.queued, 1);
-  assert.equal(db._collection("inbound")[0].fileName, "DCSC - Clarence Archuleta.pdf");
+  assert.equal(sb._collection("inbound")[0].fileName, "DCSC - Clarence Archuleta.pdf");
 });
 
 test("a document nobody can classify is still queued for a human", async () => {
-  const { db, bucket } = ctx();
+  const { sb } = ctx();
   const graph = fakeGraph([
     message("m1", "2026-08-01T10:00:00Z", {
       subject: "Re: Fw: documents",
@@ -261,10 +278,10 @@ test("a document nobody can classify is still queued for a human", async () => {
     }),
   ]);
 
-  const result = await pollMailbox({ db, bucket }, CFG, { graph });
+  const result = await pollMailbox({ sb }, CFG, { graph });
 
   assert.equal(result.queued, 1);
-  const [entry] = db._collection("inbound");
+  const [entry] = sb._collection("inbound");
   assert.equal(entry.docType, "unknown");
   assert.equal(entry.confidence, "unmatched");
 });

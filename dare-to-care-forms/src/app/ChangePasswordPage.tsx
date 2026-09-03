@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-
+import { supabase } from '../config/supabase';
+// @ts-ignore - JS module without types
+import { update } from '../lib/db.js';
 
 export default function ChangePasswordPage() {
   const [newPassword, setNewPassword] = useState('');
@@ -30,17 +32,17 @@ export default function ChangePasswordPage() {
     }
 
     try {
-      const { updatePassword } = await import('firebase/auth');
-      const { auth, db } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
+      // Imported statically now. These were dynamic only to keep the Firebase
+      // SDK out of the main bundle; the Supabase client is already in it,
+      // loaded by the app shell before this screen can ever render.
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error("Not authenticated");
 
-      if (!auth.currentUser) throw new Error("Not authenticated");
+      const { error: pwError } = await supabase.auth.updateUser({ password: newPassword });
+      if (pwError) throw new Error(pwError.message);
 
-      await updatePassword(auth.currentUser, newPassword);
-      await updateDoc(doc(db, "users", auth.currentUser.uid), {
-        mustChangePassword: false
-      });
-      
+      await update("users", authUser.id, { mustChangePassword: false });
+
       // Logout to force them to use their new password
       await logout();
       navigate('/login', { state: { message: "Password updated successfully! Please log in again." } });

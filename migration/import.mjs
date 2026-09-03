@@ -5,25 +5,24 @@
 //   node migration/import.mjs staff --dry-run
 //   node migration/import.mjs staff
 //
-// Clients import straight into the `clients` collection - no auth involved.
+// Clients import straight into the `clients` table - no auth involved.
 //
-// Staff are different: the app keys `users` documents by Firebase Auth UID, so
+// Staff are different: the app keys `users` rows by auth account id, so
 // importing a staff member means creating a real login. That is a side-effecting
 // operation (it can trigger password-reset email), so staff import is a two-step
 // process and never runs implicitly:
 //   1. `staff --dry-run` writes migration/staff-plan.json for review.
 //   2. `staff` creates the accounts from that reviewed plan.
 //
-// Requires a service-account key so this can run outside the browser:
-//   GOOGLE_APPLICATION_CREDENTIALS=/path/to/serviceAccount.json
-// Get one from Firebase console > Project settings > Service accounts.
+// Requires the service-role key so this can run outside the browser:
+//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
+// Both are in the Supabase dashboard under Project settings > API.
 
+import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { initializeApp, cert, applicationDefault } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
+import { createClient } from "@supabase/supabase-js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const [, , target, ...flags] = process.argv;
@@ -34,13 +33,33 @@ if (!["clients", "staff"].includes(target)) {
   process.exit(1);
 }
 
-// ── Firebase ────────────────────────────────────────────────────────────────
-const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-initializeApp({
-  credential: keyPath ? cert(JSON.parse(readFileSync(keyPath, "utf8"))) : applicationDefault(),
+// ── Supabase ────────────────────────────────────────────────────────────────
+// Runs under the service-role key, which bypasses RLS. That is correct for a
+// local one-off import and is why this is a script rather than an endpoint.
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SERVICE_KEY) {
+  console.error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+  process.exit(1);
+}
+const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
 });
-const db = getFirestore();
-const auth = getAuth();
+
+/** Look up an auth account by email. There is no getUserByEmail, so this pages
+ *  the admin list once and indexes it — cheaper than a call per person, and
+ *  this roster is a few dozen people. */
+let authByEmail = null;
+async function findAuthUser(email) {
+  if (!authByEmail) {
+    authByEmail = new Map();
+    const { data } = await sb.auth.admin.listUsers({ perPage: 1000 });
+    for (const u of data?.users || []) {
+      if (u.email) authByEmail.set(u.email.toLowerCase(), u.id);
+    }
+  }
+  return authByEmail.get(String(email).toLowerCase()) || null;
+}
 
 const load = (f) => JSON.parse(readFileSync(join(HERE, f), "utf8"));
 const initialsOf = (name) =>
@@ -51,8 +70,8 @@ async function importClients() {
   const { clients } = load("caretime-clients.json");
 
   // Match on name so re-running updates rather than duplicating.
-  const existing = await db.collection("clients").get();
-  const byName = new Map(existing.docs.map((d) => [String(d.data().name || "").toLowerCase(), d]));
+  const { data: existing } = await sb.from("clients").select("id, name");
+  const byName = new Map((existing || []).map((r) => [String(r.name || "").toLowerCase(), r.id]));
 
   let created = 0, updated = 0;
   for (const c of clients) {
@@ -75,13 +94,20 @@ async function importClients() {
       dob: null, mrn: null, physician: null, allergies: null,
     };
 
-    const hit = byName.get(c.name.toLowerCase());
-    if (hit) {
+    // `name` and `status` are promoted columns; everything else stays in the
+    // jsonb document, matching how the app writes clients (supabase/schema.sql).
+    const { name, status, ...rest } = doc;
+    const row = { name, status, data: rest };
+
+    const hitId = byName.get(c.name.toLowerCase());
+    if (hitId) {
       updated++;
-      if (!DRY) await hit.ref.set(doc, { merge: true });
+      // upsert on the existing id merges rather than duplicating, which is what
+      // `set(..., { merge: true })` did.
+      if (!DRY) await sb.from("clients").upsert({ id: hitId, ...row });
     } else {
       created++;
-      if (!DRY) await db.collection("clients").add(doc);
+      if (!DRY) await sb.from("clients").insert({ id: randomUUID(), ...row });
     }
   }
   console.log(`${DRY ? "[dry-run] " : ""}clients: ${created} new, ${updated} updated (${clients.length} total)`);
@@ -100,7 +126,7 @@ async function importStaff() {
 
     let existingUid = null;
     if (s.email && !s.emailNeedsFix) {
-      try { existingUid = (await auth.getUserByEmail(s.email)).uid; } catch { /* no account yet */ }
+      existingUid = await findAuthUser(s.email);
     }
 
     plan.push({
@@ -135,24 +161,37 @@ async function importStaff() {
       // Random password: the user never uses it. They set their own via the
       // reset link, and mustChangePassword gates the app until they do.
       const tempPassword = `Dtc!${Math.random().toString(36).slice(2, 10)}A1`;
-      uid = (await auth.createUser({ email: p.email, password: tempPassword, displayName: p.name })).uid;
+      const { data: created, error } = await sb.auth.admin.createUser({
+        email: p.email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: { name: p.name, role: p.role },
+      });
+      if (error) { console.log(`skip  ${p.name} (${error.message})`); continue; }
+      uid = created.user.id;
     }
 
-    await db.collection("users").doc(uid).set({
+    // Upsert, not insert: the on_auth_user_created trigger already made a bare
+    // row the instant the account existed. devAccess is deliberately absent —
+    // it is granted by hand, never as part of an import.
+    await sb.from("users").upsert({
+      id: uid,
       name: p.name,
       email: p.email.toLowerCase(),
       role: p.role,
-      initials: initialsOf(p.name),
       status: "active",
-      mustChangePassword: true,
-      phone: p.phone,
-      city: p.city,
-      zip: p.zip,
-      caretimeId: p.caretimeId,
-      source: "caretime-import",
-      createdAt: new Date().toISOString(),
-      lastLoginAt: null,
-    }, { merge: true });
+      must_change_password: true,
+      created_at: new Date().toISOString(),
+      last_login_at: null,
+      data: {
+        initials: initialsOf(p.name),
+        phone: p.phone,
+        city: p.city,
+        zip: p.zip,
+        caretimeId: p.caretimeId,
+        source: "caretime-import",
+      },
+    });
 
     console.log(`${p.existingUid ? "link " : "create"} ${p.name} (${p.role})`);
   }

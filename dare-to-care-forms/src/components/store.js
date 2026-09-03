@@ -1,6 +1,14 @@
-import { collection, doc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, arrayUnion } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { auth, db, storage, firebaseConfig } from "../config/firebase";
+import { supabase, BUCKETS } from "../config/supabase";
+import {
+  fetchAll,
+  insert,
+  put,
+  update,
+  remove,
+  appendToArray,
+  uploadFile,
+  signedUrls,
+} from "../lib/db.js";
 // Static: FormWizard already imports this, so a dynamic import here would not
 // split it into its own chunk. The heavy libraries (jspdf, html2canvas) are
 // dynamically imported inside utils/pdf itself, which is where the win actually is.
@@ -10,12 +18,12 @@ import { elementToPdfBlob } from "../utils/pdf";
 // Kept as data next door rather than logic in here, because the checklist
 // changes on a different (and much faster) schedule than this code does.
 import { checklistFor, checklistItems } from "./file-checklist";
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-
-const secondaryApp = getApps().find(a => a.name === "Secondary") ? getApp("Secondary") : initializeApp(firebaseConfig, "Secondary");
-const secondaryAuth = getAuth(secondaryApp);
 import { DTC } from "./schemas.js";
+
+// The signed-in user, cached from Supabase's auth state so the synchronous
+// call sites that used to read auth.currentUser still can. Kept in step by the
+// onAuthStateChange subscription below.
+let authUser = null;
 
 const listeners = new Set();
 
@@ -53,7 +61,7 @@ async function syncQueue() {
       // Strip only local bookkeeping fields; keep status/templateName/caregiver so the
       // synced record is identical to an online submission.
       const { id: _id, __localId: _lid, queuedAt: _q, ...payload } = item;
-      await addDoc(collection(db, "submissions"), payload);
+      await insert("submissions", payload);
       removeFromQueue(item.id);
       synced++;
     } catch { /* still offline or server error — leave in queue */ }
@@ -63,19 +71,19 @@ async function syncQueue() {
 
 // ─── Ingestion endpoints ───────────────────────────────────────────────────
 // The review queue's two actions run server-side, on Netlify functions rather
-// than Firebase Cloud Functions — Cloud Functions need the paid Blaze plan for
-// what amounts to one cron job and two form posts.
+// rather than in the database — filing has to copy the object, write the
+// record and write the audit entry as one server-side step.
 //
-// That means no callable SDK, so identity travels as a Firebase ID token in the
-// Authorization header and the function verifies it. Same-origin, because the
-// app and the functions are served from the same Netlify site.
+// That means no callable SDK, so identity travels as the Supabase session's
+// access token in the Authorization header and the function verifies it.
+// Same-origin, because the app and the functions are served from the same
+// Netlify site.
 async function callIngestion(endpoint, payload) {
-  const user = auth.currentUser;
-  if (!user) throw new Error("You are signed out. Sign in again.");
-
-  // Not cached: a stale token is the most common cause of a spurious 401, and
-  // the SDK only refreshes on its own schedule.
-  const token = await user.getIdToken();
+  // getSession() refreshes an expired token rather than handing back a stale
+  // one, which is the most common cause of a spurious 401.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("You are signed out. Sign in again.");
+  const token = session.access_token;
 
   const res = await fetch(`/.netlify/functions/${endpoint}`, {
     method: "POST",
@@ -95,11 +103,11 @@ async function callIngestion(endpoint, payload) {
 // ─── Audit trail (best-effort; never blocks the user action) ────────────────
 async function logAudit(action, target, detail) {
   try {
-    await addDoc(collection(db, "audit"), {
+    await insert("audit", {
       action,
       target: target != null ? String(target) : "",
       detail: detail != null ? String(detail) : "",
-      actor: state.user?.name || auth.currentUser?.email || "system",
+      actor: state.user?.name || authUser?.email || "system",
       role: state.user?.role || "unknown",
       timestamp: new Date().toISOString(),
     });
@@ -225,12 +233,12 @@ const state = {
   documents: [],
   // Documents that arrived from outside the app and have not been filed yet.
   // Only office managers and admins can read these, so for everyone else this
-  // stays empty — see the `inbound` rule in firestore.rules.
+  // stays empty — see the `inbound` policies in supabase/schema.sql.
   inbound: [],
   // Employment applications submitted on careers.daretocarehomecare.com
-  // (dtc-jobapp — a separate site, same Firebase project). Office-manager+
-  // only, same reasoning as inbound — see the `applications` rule in
-  // firestore.rules.
+  // (dtc-jobapp — a separate site, still on the old Firebase project until it
+  // gets its own migration). Office-manager+ only, same reasoning as inbound —
+  // see the `applications` policies in supabase/schema.sql.
   applications: [],
   user: null, // Track current user manually from AuthContext if needed
 };
@@ -255,13 +263,35 @@ function clearState() {
   emit();
 }
 
-async function fetchCollection(colName) {
-  const snap = await getDocs(collection(db, colName));
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+async function fetchCollection(table) {
+  return await fetchAll(table);
+}
+
+// Filed PDFs and uploaded scans are private objects, not permanent public URLs.
+// After each refresh we mint one batch of short-lived signed URLs for whatever
+// the current user is actually allowed to see, and hang them on the in-memory
+// records under the same field names the UI already reads (`pdfUrl`, `url`).
+//
+// Nothing is written back to the database — the URLs live for this session and
+// expire — so there is no permanent bearer token at rest anywhere, which was
+// the thing worth fixing about the old getDownloadURL() model. A file the
+// caller may not read simply gets no URL, and the row still renders.
+async function attachSignedUrls() {
+  const paths = [
+    ...state.submissions.map((s) => s.pdfPath),
+    ...state.documents.map((d) => d.path),
+  ];
+  const urls = await signedUrls(BUCKETS.filed, paths);
+  state.submissions = state.submissions.map((s) =>
+    s.pdfPath && urls[s.pdfPath] ? { ...s, pdfUrl: urls[s.pdfPath] } : s,
+  );
+  state.documents = state.documents.map((d) =>
+    d.path && urls[d.path] ? { ...d, url: urls[d.path] } : d,
+  );
 }
 
 async function refresh() {
-  const user = auth.currentUser;
+  const user = authUser;
   if (!user) { clearState(); return; }
 
   try {
@@ -272,15 +302,17 @@ async function refresh() {
       fetchCollection("tasks"),
     ];
 
-    // TODO: Need proper user role tracking to restrict this, fetching all for now.
-    // In a real app with Firestore Rules, this would be restricted automatically.
+    // Each of these is filtered by Row Level Security rather than by this
+    // code: a caregiver's SELECT simply returns fewer rows. Fetching "all"
+    // here means "all this person is allowed to see".
     requests.push(fetchCollection("audit"));
     requests.push(fetchCollection("users"));
-    // Certificates are written by the course site; collection may be empty/absent.
+    // Certificates are written by the course site; table may be empty.
     requests.push(fetchCollection("certificates").catch(() => []));
     // The ingestion queue is office-manager-and-above. For a caregiver this
-    // read is denied by the rules, which is the intended answer — swallow it so
-    // one restricted collection doesn't fail their whole refresh.
+    // read returns nothing under RLS, which is the intended answer — the catch
+    // stays so a genuine error in one restricted table doesn't fail their
+    // whole refresh either.
     requests.push(fetchCollection("inbound").catch(() => []));
     // Uploaded scans. Swallowed the same way — a caregiver who can't read the
     // whole collection shouldn't have their entire refresh fail because of it.
@@ -301,7 +333,11 @@ async function refresh() {
     state.applications = applications || [];
 
     // Find current user profile
-    state.user = users.find(u => u.id === user.uid) || null;
+    state.user = users.find(u => u.id === user.id) || null;
+
+    // Must come after the records are in place and before emit(), so the first
+    // render already has viewable links rather than flashing empty ones.
+    await attachSignedUrls();
     emit();
   } catch (error) {
     console.error("Refresh failed", error);
@@ -309,12 +345,21 @@ async function refresh() {
   }
 }
 
-// In Firebase, we rely on Auth state changes rather than custom events for the most part.
-// But we keep this listener alive for backward compatibility with frontend.
+// Auth state drives the data, as it did before. The custom event listener stays
+// for the frontend callers that still fire it.
 window.addEventListener("dtc-auth-changed", () => { void refresh(); });
 window.addEventListener("online", () => { void syncQueue().then(() => refresh()); });
-auth.onAuthStateChanged((user) => {
-  if (user) void refresh();
+
+// Seed from the session already in storage, so a page reload doesn't blank the
+// app while waiting for the first auth event.
+void supabase.auth.getSession().then(({ data: { session } }) => {
+  authUser = session?.user ?? null;
+  if (authUser) void refresh();
+});
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  authUser = session?.user ?? null;
+  if (authUser) void refresh();
   else clearState();
 });
 
@@ -324,7 +369,7 @@ auth.onAuthStateChanged((user) => {
 // previewed — they call the same Store write methods a real user would. This
 // flag is the actual safety boundary: every write method below calls
 // assertWritable() first, so "preview mode won't affect real data" (the copy
-// shown in the UI) is true because the write never reaches Firestore, not
+// shown in the UI) is true because the write never reaches the database, not
 // just because nobody happened to click a button. Toggled by
 // AuthContext.enterPreview/exitPreview — never set from anywhere a real
 // logged-in-as-that-role user's actions run through.
@@ -397,7 +442,7 @@ export const DTCStore = {
       fieldCount,
       updatedAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, "templates", schemaKey), template);
+    await put("templates", schemaKey, template);
     await logAudit("template_imported", base.name || schemaKey);
     await refresh();
     return template;
@@ -419,7 +464,7 @@ export const DTCStore = {
       fieldCount,
       updatedAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, "templates", key), template);
+    await put("templates", key, template);
     await logAudit("template_imported", schema.name || key, `Uploaded from ${schema.sourceFile || "PDF"}`);
     await refresh();
     return template;
@@ -428,28 +473,28 @@ export const DTCStore = {
   async saveTemplate(template) {
     const fieldCount = (template.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
     const toSave = { ...template, fieldCount, updatedAt: new Date().toISOString() };
-    await setDoc(doc(db, "templates", template.key), toSave);
+    await put("templates", template.key, toSave);
     await logAudit("template_saved", template.name || template.key);
     await refresh();
     return toSave;
   },
 
   async publishTemplate(key) {
-    await updateDoc(doc(db, "templates", key), { status: "published", updatedAt: new Date().toISOString() });
+    await update("templates", key, { status: "published", updatedAt: new Date().toISOString() });
     await logAudit("template_published", this.schemaName(key));
     await refresh();
     return { key, status: "published" };
   },
 
   async unpublishTemplate(key) {
-    await updateDoc(doc(db, "templates", key), { status: "draft", updatedAt: new Date().toISOString() });
+    await update("templates", key, { status: "draft", updatedAt: new Date().toISOString() });
     await logAudit("template_unpublished", this.schemaName(key));
     await refresh();
     return { key, status: "draft" };
   },
 
   async getTemplateVersions() {
-    // Requires subcollection or complex logic in Firestore. Returning empty for now.
+    // Never implemented — versions were never written anywhere to read back.
     return [];
   },
 
@@ -478,10 +523,10 @@ export const DTCStore = {
       return { ...entry, queued: true };
     }
     try {
-      const docRef = await addDoc(collection(db, "submissions"), enriched);
+      const created = await insert("submissions", enriched);
       await logAudit("form_submitted", enriched.templateName, enriched.clientName || "");
       await refresh();
-      return { id: docRef.id, ...enriched };
+      return { id: created.id, ...enriched };
     } catch (err) {
       const entry = addToQueue(enriched);
       return { ...entry, queued: true };
@@ -532,7 +577,7 @@ export const DTCStore = {
   async fileSubmissionPdf(saved, sheetEl) {
     if (!saved?.id || saved.queued || !sheetEl) {
       if (saved?.id && !saved.queued) {
-        try { await updateDoc(doc(db, "submissions", saved.id), { pdfPending: true }); } catch { /* non-fatal */ }
+        try { await update("submissions", saved.id, { pdfPending: true }); } catch { /* non-fatal */ }
       }
       return null;
     }
@@ -543,12 +588,13 @@ export const DTCStore = {
       // Filed documents are immutable. A corrected resubmission is filed as a new
       // version alongside the original rather than overwriting it, so there is
       // always a record of exactly what was signed and when.
-      const path = `filed/${subject.type}/${subject.id}/${saved.id}__${Date.now()}.pdf`;
-      const fileRef = storageRef(storage, path);
-      await uploadBytes(fileRef, blob, { contentType: "application/pdf" });
-      const url = await getDownloadURL(fileRef);
-      await updateDoc(doc(db, "submissions", saved.id), {
-        pdfUrl: url,
+      // The bucket IS `filed`, so the old "filed/" prefix is no longer part of
+      // the object path — it would produce filed/filed/... here.
+      const path = `${subject.type}/${subject.id}/${saved.id}__${Date.now()}.pdf`;
+      await uploadFile(BUCKETS.filed, path, blob, "application/pdf");
+      // Only the path is stored. The viewable URL is minted per session by
+      // attachSignedUrls() and expires, rather than living in the row forever.
+      await update("submissions", saved.id, {
         pdfPath: path,
         pdfFiledAt: new Date().toISOString(),
         pdfPending: false,
@@ -557,10 +603,10 @@ export const DTCStore = {
       });
       await logAudit("form_filed", saved.templateName || saved.schemaKey, subject.name);
       await refresh();
-      return url;
+      return state.submissions.find((s) => s.id === saved.id)?.pdfUrl || null;
     } catch {
       // Keep the record; flag that its PDF still needs generating.
-      try { await updateDoc(doc(db, "submissions", saved.id), { pdfPending: true }); } catch { /* non-fatal */ }
+      try { await update("submissions", saved.id, { pdfPending: true }); } catch { /* non-fatal */ }
       return null;
     }
   },
@@ -584,10 +630,9 @@ export const DTCStore = {
     if (file.size > 25 * 1024 * 1024) throw new Error("File is too large (25MB limit)");
 
     const safe = String(file.name || "document").replace(/[^\w.\-]+/g, "_").slice(-80);
-    const path = `filed/${subjectType}/${subjectId}/uploads/${Date.now()}__${safe}`;
-    const fileRef = storageRef(storage, path);
-    await uploadBytes(fileRef, file, { contentType: file.type || "application/octet-stream" });
-    const url = await getDownloadURL(fileRef);
+    // Bucket-relative, same as fileSubmissionPdf — the bucket is `filed`.
+    const path = `${subjectType}/${subjectId}/uploads/${Date.now()}__${safe}`;
+    await uploadFile(BUCKETS.filed, path, file, file.type || "application/octet-stream");
 
     const record = {
       subjectType,
@@ -596,7 +641,8 @@ export const DTCStore = {
       fileName: file.name || safe,
       contentType: file.type || "",
       size: file.size,
-      url,
+      // No `url` field: like filed PDFs, the viewable link is signed per
+      // session by attachSignedUrls() rather than stored.
       path,
       // The date on the DOCUMENT, not the date it was scanned. A background
       // check run in March that gets uploaded in August is still a March
@@ -609,7 +655,7 @@ export const DTCStore = {
       uploadedAt: new Date().toISOString(),
       source: meta.source || "manual-upload",
     };
-    const created = await addDoc(collection(db, "documents"), record);
+    const created = await insert("documents", record);
     await logAudit("document_uploaded", record.fileName, subjectId);
     await refresh();
     return { id: created.id, ...record };
@@ -707,13 +753,13 @@ export const DTCStore = {
   // Soft delete (owner / dev portal only)
   // ---------------------------------------------------------------------
   // A filed submission is compliance evidence, so this never physically
-  // erases one — see firestore.rules, which blocks a real delete outright
+  // erases one — see supabase/schema.sql, which blocks a real delete outright
   // regardless of who's asking. What this does is stamp it removed-from-view:
   // who did it, when, and why. Restorable at any time, and still present in
   // full for an audit even while "deleted." The list a normal person sees
   // just filters these out.
   async softDeleteSubmission(id, reason) {
-    await updateDoc(doc(db, "submissions", id), {
+    await update("submissions", id, {
       deletedAt: new Date().toISOString(),
       deletedBy: state.user?.name || "Dev portal",
       deletedById: state.user?.id || null,
@@ -724,7 +770,7 @@ export const DTCStore = {
   },
 
   async restoreSubmission(id) {
-    await updateDoc(doc(db, "submissions", id), {
+    await update("submissions", id, {
       deletedAt: null,
       deletedBy: null,
       deletedById: null,
@@ -744,7 +790,7 @@ export const DTCStore = {
   // something that genuinely should never have existed).
   //
   // Two things this does NOT relax:
-  //   - firestore.rules still only grants delete to isDevUser(). Nobody else
+  //   - the submissions_delete policy still only grants delete to a dev user. Nobody else
   //     gets this by asking nicely, no matter what's in this function.
   //   - only a submission already sitting in the soft-deleted state can be
   //     hard-deleted. That's enforced here, not just as a UI nicety — it's a
@@ -771,19 +817,21 @@ export const DTCStore = {
     ].join(" | ");
 
     await logAudit("submission_hard_deleted", id, snapshot);
-    await deleteDoc(doc(db, "submissions", id));
+    await remove("submissions", id);
     await refresh();
   },
 
   async updateSubmission(id, patch) {
     assertWritable();
     const actor = state.user;
-    const update = { ...patch };
+    // Named `changes`, not `update` — that identifier is now the imported
+    // database helper, and shadowing it here would break the call below.
+    const changes = { ...patch };
     if (patch.status === "reviewed") {
-      update.reviewedBy = actor?.name || "Office";
-      update.reviewedAt = new Date().toISOString();
+      changes.reviewedBy = actor?.name || "Office";
+      changes.reviewedAt = new Date().toISOString();
     }
-    await updateDoc(doc(db, "submissions", id), update);
+    await update("submissions", id, changes);
     await logAudit(patch.status === "reviewed" ? "form_reviewed" : "submission_updated", id);
     await refresh();
     return { id, ...patch };
@@ -794,15 +842,12 @@ export const DTCStore = {
     const actor = state.user;
     // Use the same status string the whole UI checks for ("needsCorrection"),
     // and append to an audit trail on the record itself.
-    await updateDoc(doc(db, "submissions", id), {
+    await update("submissions", id, { status: "needsCorrection", correctionNote: note });
+    await appendToArray("submissions", id, "correctionHistory", {
       status: "needsCorrection",
-      correctionNote: note,
-      correctionHistory: arrayUnion({
-        status: "needsCorrection",
-        note: note || "",
-        actorName: actor?.name || "Office",
-        timestamp: new Date().toISOString(),
-      }),
+      note: note || "",
+      actorName: actor?.name || "Office",
+      timestamp: new Date().toISOString(),
     });
     await logAudit("correction_requested", id, note || "");
     await refresh();
@@ -812,16 +857,16 @@ export const DTCStore = {
   async resubmitSubmission(id, payload) {
     assertWritable();
     const actor = state.user;
-    await updateDoc(doc(db, "submissions", id), {
+    await update("submissions", id, {
       ...payload,
       status: "submitted",
       submittedAt: new Date().toISOString(),
       correctionNote: null,
-      correctionHistory: arrayUnion({
-        status: "submitted",
-        actorName: actor?.name || payload.caregiverName || "Caregiver",
-        timestamp: new Date().toISOString(),
-      }),
+    });
+    await appendToArray("submissions", id, "correctionHistory", {
+      status: "submitted",
+      actorName: actor?.name || payload.caregiverName || "Caregiver",
+      timestamp: new Date().toISOString(),
     });
     await logAudit("form_resubmitted", id);
     await refresh();
@@ -833,14 +878,14 @@ export const DTCStore = {
 
   async createTask(task) {
     assertWritable();
-    const docRef = await addDoc(collection(db, "tasks"), task);
+    const created = await insert("tasks", task);
     await refresh();
-    return { id: docRef.id, ...task };
+    return { id: created.id, ...task };
   },
 
   async updateTask(id, patch) {
     assertWritable();
-    await updateDoc(doc(db, "tasks", id), patch);
+    await update("tasks", id, patch);
 
     // Recurring compliance: completing a repeating task schedules the next one.
     // Without this, "supervisory visit every 90 days" and "care plan yearly"
@@ -852,7 +897,7 @@ export const DTCStore = {
         const next = nextDueDate(task.dueDate, task.recurrence);
         if (next) {
           const { id: _drop, completedAt: _c, ...carry } = task;
-          await addDoc(collection(db, "tasks"), {
+          await insert("tasks", {
             ...carry,
             status: "pending",
             dueDate: next,
@@ -875,38 +920,38 @@ export const DTCStore = {
 
   // Users
   getUsers() { return state.users.slice(); },
-  getToken() { return getStoredToken(); },
 
+  // Creating an account runs server-side, which is a real change from the
+  // Firebase version and an improvement rather than a workaround.
+  //
+  // Firebase needed a whole second app instance ("Secondary") purely so that
+  // createUserWithEmailAndPassword wouldn't sign the admin out by replacing
+  // their session with the new user's. Supabase has the same hazard in the
+  // browser, and the same trick would work — but account creation is an
+  // administrative act, so it belongs behind the service-role key with the
+  // caller's admin role re-checked on the server, not in front-end code that
+  // happens to be reachable only from an admin screen.
   async createUser(userInput) {
     assertWritable();
-    const { email, password, ...rest } = userInput;
-    const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-    const initials = rest.name.split(' ').map(s => s[0]).join('').toUpperCase().slice(0, 2) || '?';
-    const docData = {
-      ...rest,
-      email: email.toLowerCase(),
-      initials,
-      status: "active",
-      mustChangePassword: true, // Force new users to change their password
-      createdAt: new Date().toISOString(),
-      lastLoginAt: null
-    };
-    await setDoc(doc(db, "users", userCred.user.uid), docData);
-    await logAudit("user_created", docData.name, ROLE_LABEL(rest.role));
+    const created = await callIngestion("create-user", userInput);
+    await logAudit("user_created", created.name, ROLE_LABEL(userInput.role));
     await refresh();
-    return { id: userCred.user.uid, ...docData };
+    return created;
   },
 
   async updateUser(id, patch) {
     assertWritable();
-    await updateDoc(doc(db, "users", id), patch);
+    await update("users", id, patch);
     await logAudit("user_updated", state.users.find((u) => u.id === id)?.name || id);
     await refresh();
     return { id, ...patch };
   },
 
   async sendPasswordReset(email) {
-    await sendPasswordResetEmail(auth, email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/change-password`,
+    });
+    if (error) throw error;
   },
 
   // Clients
@@ -914,15 +959,15 @@ export const DTCStore = {
     assertWritable();
     const initials = (clientInput.name || "?").split(' ').map((s) => s[0]).join('').toUpperCase().slice(0, 2) || '?';
     const data = { status: "active", initials, ...clientInput };
-    const docRef = await addDoc(collection(db, "clients"), data);
+    const created = await insert("clients", data);
     await logAudit("client_created", data.name);
     await refresh();
-    return { id: docRef.id, ...data };
+    return { id: created.id, ...data };
   },
 
   async updateClient(id, patch) {
     assertWritable();
-    await updateDoc(doc(db, "clients", id), patch);
+    await update("clients", id, patch);
     await logAudit("client_updated", state.clients.find((c) => c.id === id)?.name || id);
     await refresh();
     return { id, ...patch };
@@ -933,7 +978,7 @@ export const DTCStore = {
   // certification results, imported GoFormz records. The ingestion function
   // proposes who each one belongs to; a person decides.
   //
-  // Both actions go through callable functions rather than writing Firestore
+  // Both actions go through server functions rather than writing the table
   // directly. Filing a document has to copy the object into the person's file,
   // create the submission record and write the audit entry as one server-side
   // step — a browser that could mark an entry "filed" on its own could leave
@@ -992,7 +1037,7 @@ export const DTCStore = {
   // Submitted on careers.daretocarehomecare.com (dtc-jobapp), written into
   // this project's `applications` collection by that site's server function.
   // This app only ever reads and marks-reviewed — see the `applications` rule
-  // in firestore.rules for why nothing here can create or rewrite one.
+  // in supabase/schema.sql for why nothing here can create or rewrite one.
 
   getApplications() { return state.applications.slice(); },
 
@@ -1009,10 +1054,10 @@ export const DTCStore = {
     const patch = {
       status: "reviewed",
       reviewedAt: new Date().toISOString(),
-      reviewedBy: state.user?.name || auth.currentUser?.email || "Office Manager",
+      reviewedBy: state.user?.name || authUser?.email || "Office Manager",
     };
     if (note) patch.reviewNote = note;
-    await updateDoc(doc(db, "applications", id), patch);
+    await update("applications", id, patch);
     const app = state.applications.find((a) => a.id === id);
     await logAudit("application_reviewed", app?.applicant || id, note || "");
     await refresh();
@@ -1023,9 +1068,9 @@ export const DTCStore = {
   // this fetches the bytes through get-application-file.mjs (auth-checked
   // there too, not just here) and hands back a local object URL to open.
   async applicationFileUrl(blobKey) {
-    const user = auth.currentUser;
-    if (!user) throw new Error("You are signed out. Sign in again.");
-    const token = await user.getIdToken();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("You are signed out. Sign in again.");
+    const token = session.access_token;
     const res = await fetch(
       `https://careers.daretocarehomecare.com/api/application-file?key=${encodeURIComponent(blobKey)}`,
       { headers: { authorization: `Bearer ${token}` } },
@@ -1069,7 +1114,7 @@ export const DTCStore = {
   },
 
   async linkCertificate(certId, userId) {
-    await updateDoc(doc(db, "certificates", certId), { linkedUserId: userId, linkedAt: new Date().toISOString() });
+    await update("certificates", certId, { linkedUserId: userId, linkedAt: new Date().toISOString() });
     await logAudit("certificate_linked", certId);
     await refresh();
   },
@@ -1088,7 +1133,7 @@ export const DTCStore = {
     if (me.role === "newHire" && !me.coursesUnlockedAt) return null;
 
     const token = `h_${me.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    await setDoc(doc(db, "courseHandoffs", token), {
+    await put("course_handoffs", token, {
       uid: me.id,
       name: me.name || "",
       email: (me.email || "").toLowerCase(),
@@ -1120,17 +1165,20 @@ export const DTCStore = {
 
   // Training
   async getMyTrainingProgress() {
-    const user = auth.currentUser;
-    if (!user) return {};
-    const u = state.users.find((x) => x.id === user.uid);
+    if (!authUser) return {};
+    const u = state.users.find((x) => x.id === authUser.id);
     return u?.trainingProgress || {};
   },
 
   async completeTrainingModule(moduleId) {
-    const user = auth.currentUser;
-    if (!user) return;
-    await updateDoc(doc(db, "users", user.uid), {
-      [`trainingProgress.${moduleId}`]: new Date().toISOString()
+    if (!authUser) return;
+    // Firestore's dotted-path update wrote one key inside a nested map without
+    // touching its siblings. `trainingProgress` now lives in the users row's
+    // jsonb, so the whole map is read, extended and written back — hence the
+    // explicit merge rather than a single-key patch.
+    const current = state.users.find((x) => x.id === authUser.id)?.trainingProgress || {};
+    await update("users", authUser.id, {
+      trainingProgress: { ...current, [moduleId]: new Date().toISOString() },
     });
     await refresh();
   },
@@ -1142,7 +1190,7 @@ export const DTCStore = {
 
   async updateClientAssignments(clientId, userIds) {
     assertWritable();
-    await updateDoc(doc(db, "clients", clientId), { assignedUsers: userIds });
+    await update("clients", clientId, { assignedUsers: userIds });
     await refresh();
     return { assignments: userIds };
   },

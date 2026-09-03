@@ -11,8 +11,8 @@
 import { getToken, listMessagesSince } from "./graph.mjs";
 
 const REQUIRED = [
-  ["FIREBASE_SERVICE_ACCOUNT", "Firebase console → Project settings → Service accounts → Generate new private key"],
-  ["FIREBASE_STORAGE_BUCKET", "dtcapp-24504.firebasestorage.app"],
+  ["SUPABASE_URL", "Supabase dashboard → Project settings → API → Project URL"],
+  ["SUPABASE_SERVICE_ROLE_KEY", "Supabase dashboard → Project settings → API → service_role. Never expose to a browser."],
   ["GRAPH_TENANT_ID", "Entra admin centre → the app registration → Directory (tenant) ID"],
   ["GRAPH_CLIENT_ID", "Entra admin centre → the app registration → Application (client) ID"],
   ["GRAPH_CLIENT_SECRET", "Entra → the app registration → Certificates & secrets. Shown once."],
@@ -91,42 +91,48 @@ export async function preflight(ctx = {}, env = process.env) {
     );
   }
 
-  // 4. Firestore and Storage, if a handle was passed. A read and a metadata
-  //    call — nothing is created, so running this against production is safe.
-  if (ctx.db) {
+  // 4. Database and Storage, if a handle was passed. A read and a listing —
+  //    nothing is created, so running this against production is safe.
+  if (ctx.sb) {
     try {
-      const snap = await ctx.db.collection("clients").limit(1).get();
-      const users = await ctx.db.collection("users").limit(1).get();
+      const clients = await ctx.sb.from("clients").select("id").limit(1);
+      const users = await ctx.sb.from("users").select("id").limit(1);
+      if (clients.error || users.error) throw new Error(clients.error?.message || users.error?.message);
       checks.push(
-        snap.empty && users.empty
+        !clients.data?.length && !users.data?.length
           ? bad(
-              "Firestore",
+              "Database",
               "connected, but clients and users are both empty",
               "The migration has not been run — the matcher has nothing to match against, " +
                 "so everything will queue as unmatched. See migration/README.md.",
             )
-          : ok("Firestore", "clients and users readable"),
+          : ok("Database", "clients and users readable"),
       );
     } catch (err) {
-      checks.push(bad("Firestore", String(err?.message || err), "Check the service-account JSON is intact."));
-    }
-  }
-
-  if (ctx.bucket) {
-    try {
-      const [exists] = await ctx.bucket.exists();
       checks.push(
-        exists
-          ? ok("Storage", `${ctx.bucket.name} reachable`)
+        bad("Database", String(err?.message || err), "Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."),
+      );
+    }
+
+    try {
+      // Listing the buckets proves both that the key works for Storage and that
+      // the three the pipeline needs actually exist.
+      const { data: buckets, error } = await ctx.sb.storage.listBuckets();
+      if (error) throw new Error(error.message);
+      const names = new Set((buckets || []).map((b) => b.name));
+      const missing = ["filed", "inbound", "courses"].filter((b) => !names.has(b));
+      checks.push(
+        missing.length === 0
+          ? ok("Storage", "filed, inbound and courses buckets reachable")
           : bad(
               "Storage",
-              `${ctx.bucket.name} does not exist`,
-              "Projects created after ~Oct 2024 need the Blaze plan to use Cloud Storage at all. " +
-                "Without it the queue can record that a document arrived but cannot keep the document.",
+              `missing bucket(s): ${missing.join(", ")}`,
+              "Run supabase/storage.sql against the project. Without these the queue can " +
+                "record that a document arrived but cannot keep the document.",
             ),
       );
     } catch (err) {
-      checks.push(bad("Storage", String(err?.message || err), "Check FIREBASE_STORAGE_BUCKET."));
+      checks.push(bad("Storage", String(err?.message || err), "Check the service-role key."));
     }
   }
 

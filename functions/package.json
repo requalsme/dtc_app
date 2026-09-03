@@ -8,5 +8,8 @@
     "test": "node --test test/*.test.mjs",
     "dryrun": "node dryrun.mjs",
     "survey": "node survey.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.10"
   }
 }

@@ -141,6 +141,23 @@ the plumbing is connected; it does not mean the permissions are right.
 
 ---
 
+## Verifying the policies actually hold
+
+```bash
+node supabase/verify-policies.mjs
+```
+
+Plants a probe row in each table with the service-role key, checks a
+signed-out caller still sees nothing, attempts writes that must be refused,
+then removes the probes. Safe against production.
+
+The seeding step is the point. On an empty database "the anon caller got zero
+rows" and "the table was empty anyway" look identical, so a suite without it
+passes whether or not the policies exist at all.
+
+Role-level distinctions - staff vs caregiver vs dev - need real accounts, and
+are covered by the manual walkthrough in step 7.
+
 ## What is deliberately different from Firebase
 
 **Storage access is genuinely role-checked now.** `storage.rules` carried a

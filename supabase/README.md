@@ -29,6 +29,20 @@ The `service_role` key bypasses every Row Level Security policy in
 `schema.sql`. It belongs in Netlify's function environment and nowhere else —
 never with a `VITE_` prefix, never in the frontend, never in a commit.
 
+## The short version
+
+Steps 2, 4 and 5 below are automated. Once the project exists and `.env` is
+filled in:
+
+```bash
+npm run migrate -- --dry-run   # says what it would do, touches nothing
+npm run migrate                # schema, storage, export, import, verify
+```
+
+It is resumable — the import upserts on original ids, so a run that fails
+halfway can just be run again. The rest of this file is what that command does
+and why, plus the steps that genuinely need a person.
+
 ## 2. Create the schema
 
 SQL editor → paste and run, in this order:

@@ -22,6 +22,36 @@
 create extension if not exists pgcrypto;
 
 -- ───────────────────────────────────────────────────────────────────────────
+-- users  (table only)
+-- ───────────────────────────────────────────────────────────────────────────
+-- Defined before the role helpers below, because those are `language sql` and
+-- Postgres validates a SQL function body at CREATE time - a helper that reads
+-- public.users cannot be declared before public.users exists. Its RLS policies
+-- come further down, since they in turn depend on the helpers.
+--
+-- Keyed on auth.users(id). Firebase UIDs were 28-character strings and cannot
+-- be a uuid, so every account is re-keyed on import; `legacy_uid` keeps the old
+-- value so a migrated record can always be traced back to its Firebase origin.
+
+create table if not exists public.users (
+  id                   uuid primary key references auth.users(id) on delete cascade,
+  legacy_uid           text unique,
+  name                 text,
+  email                text,
+  role                 text not null default 'caregiver'
+                         check (role in ('admin', 'officeManager', 'caregiver', 'newHire', 'client')),
+  dev_access           boolean not null default false,
+  status               text,
+  must_change_password boolean not null default false,
+  -- Read by the course_handoffs policy: a new hire may not mint a handoff until
+  -- their training has actually been released.
+  courses_unlocked_at  timestamptz,
+  created_at           timestamptz not null default now(),
+  last_login_at        timestamptz,
+  data                 jsonb not null default '{}'::jsonb
+);
+
+-- ───────────────────────────────────────────────────────────────────────────
 -- Role helpers
 -- ───────────────────────────────────────────────────────────────────────────
 -- These MUST be SECURITY DEFINER. A policy on `users` that resolves a role by
@@ -89,32 +119,12 @@ as $$
 $$;
 
 -- ───────────────────────────────────────────────────────────────────────────
--- users
+-- users  (access control)
 -- ───────────────────────────────────────────────────────────────────────────
--- Keyed on auth.users(id). Firebase UIDs were 28-character strings and cannot
--- be a uuid, so every account is re-keyed on import; `legacy_uid` keeps the old
--- value so a migrated record can always be traced back to its Firebase origin.
-
-create table if not exists public.users (
-  id                   uuid primary key references auth.users(id) on delete cascade,
-  legacy_uid           text unique,
-  name                 text,
-  email                text,
-  role                 text not null default 'caregiver'
-                         check (role in ('admin', 'officeManager', 'caregiver', 'newHire', 'client')),
-  dev_access           boolean not null default false,
-  status               text,
-  must_change_password boolean not null default false,
-  -- Read by the course_handoffs policy: a new hire may not mint a handoff until
-  -- their training has actually been released.
-  courses_unlocked_at  timestamptz,
-  created_at           timestamptz not null default now(),
-  last_login_at        timestamptz,
-  data                 jsonb not null default '{}'::jsonb
-);
 
 alter table public.users enable row level security;
 
+drop policy if exists users_read on public.users;
 create policy users_read on public.users
   for select to authenticated
   using (true);
@@ -123,10 +133,12 @@ create policy users_read on public.users
 -- profile, and anyone may write their own. The devAccess carve-out that made
 -- the original rule interesting is enforced by the trigger below rather than
 -- here, because WITH CHECK cannot see the pre-update row.
+drop policy if exists users_insert on public.users;
 create policy users_insert on public.users
   for insert to authenticated
   with check (public.is_admin() or public.is_dev() or id = auth.uid());
 
+drop policy if exists users_update on public.users;
 create policy users_update on public.users
   for update to authenticated
   using (public.is_admin() or public.is_dev() or id = auth.uid())
@@ -187,8 +199,10 @@ create table if not exists public.clients (
 
 alter table public.clients enable row level security;
 
+drop policy if exists clients_read on public.clients;
 create policy clients_read on public.clients
   for select to authenticated using (true);
+drop policy if exists clients_write on public.clients;
 create policy clients_write on public.clients
   for all to authenticated using (public.is_staff()) with check (public.is_staff());
 
@@ -210,8 +224,10 @@ create table if not exists public.templates (
 
 alter table public.templates enable row level security;
 
+drop policy if exists templates_read on public.templates;
 create policy templates_read on public.templates
   for select to authenticated using (true);
+drop policy if exists templates_write on public.templates;
 create policy templates_write on public.templates
   for all to authenticated
   using (public.is_admin() or public.is_dev())
@@ -254,12 +270,14 @@ create index if not exists submissions_subject_idx   on public.submissions (subj
 
 alter table public.submissions enable row level security;
 
+drop policy if exists submissions_read on public.submissions;
 create policy submissions_read on public.submissions
   for select to authenticated
   using (public.is_staff() or caregiver_id = auth.uid());
 
 -- Anyone signed in may file a form, but it must arrive as "submitted", so a
 -- record cannot be created pre-reviewed or pre-approved.
+drop policy if exists submissions_insert on public.submissions;
 create policy submissions_insert on public.submissions
   for insert to authenticated
   with check (status = 'submitted');
@@ -267,6 +285,7 @@ create policy submissions_insert on public.submissions
 -- Staff may review and correct. The caregiver who filed it may only touch it
 -- while it is sitting in needsCorrection — i.e. to fix what they were asked to
 -- fix. The soft-delete carve-out is in the trigger below.
+drop policy if exists submissions_update on public.submissions;
 create policy submissions_update on public.submissions
   for update to authenticated
   using (
@@ -281,6 +300,7 @@ create policy submissions_update on public.submissions
 -- Hard delete is dev-only AND only for a record already soft-deleted. Nothing
 -- goes from "filed" to "gone" in one step; it must pass through
 -- "removed from view" first, which is a built-in cooling-off period.
+drop policy if exists submissions_delete on public.submissions;
 create policy submissions_delete on public.submissions
   for delete to authenticated
   using (public.is_dev() and deleted_at is not null);
@@ -336,6 +356,7 @@ create table if not exists public.inbound (
 
 alter table public.inbound enable row level security;
 
+drop policy if exists inbound_read on public.inbound;
 create policy inbound_read on public.inbound
   for select to authenticated using (public.is_staff());
 -- No insert/update/delete policy: server-side (service role) only.
@@ -359,9 +380,11 @@ create table if not exists public.applications (
 
 alter table public.applications enable row level security;
 
+drop policy if exists applications_read on public.applications;
 create policy applications_read on public.applications
   for select to authenticated using (public.is_staff());
 
+drop policy if exists applications_update on public.applications;
 create policy applications_update on public.applications
   for update to authenticated
   using (public.is_staff()) with check (public.is_staff());
@@ -407,9 +430,13 @@ create table if not exists public.tasks (
 
 alter table public.tasks enable row level security;
 
+drop policy if exists tasks_read   on public.tasks;
 create policy tasks_read   on public.tasks for select to authenticated using (true);
+drop policy if exists tasks_insert on public.tasks;
 create policy tasks_insert on public.tasks for insert to authenticated with check (public.is_staff());
+drop policy if exists tasks_update on public.tasks;
 create policy tasks_update on public.tasks for update to authenticated using (true) with check (true);
+drop policy if exists tasks_delete on public.tasks;
 create policy tasks_delete on public.tasks for delete to authenticated using (public.is_staff());
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -433,7 +460,9 @@ create index if not exists audit_timestamp_idx on public.audit (timestamp desc);
 
 alter table public.audit enable row level security;
 
+drop policy if exists audit_read   on public.audit;
 create policy audit_read   on public.audit for select to authenticated using (true);
+drop policy if exists audit_insert on public.audit;
 create policy audit_insert on public.audit for insert to authenticated with check (true);
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -470,10 +499,12 @@ create index if not exists documents_subject_idx on public.documents (subject_ty
 
 alter table public.documents enable row level security;
 
+drop policy if exists documents_read on public.documents;
 create policy documents_read on public.documents
   for select to authenticated
   using (public.is_staff() or subject_id = auth.uid()::text);
 
+drop policy if exists documents_insert on public.documents;
 create policy documents_insert on public.documents
   for insert to authenticated
   with check (
@@ -503,12 +534,15 @@ create index if not exists certificates_user_idx on public.certificates (user_id
 
 alter table public.certificates enable row level security;
 
+drop policy if exists certificates_read on public.certificates;
 create policy certificates_read on public.certificates
   for select to authenticated using (true);
 
+drop policy if exists certificates_insert on public.certificates;
 create policy certificates_insert on public.certificates
   for insert to authenticated with check (source = 'course-site');
 
+drop policy if exists certificates_update on public.certificates;
 create policy certificates_update on public.certificates
   for update to authenticated using (public.is_staff()) with check (public.is_staff());
 
@@ -532,9 +566,11 @@ create table if not exists public.course_handoffs (
 
 alter table public.course_handoffs enable row level security;
 
+drop policy if exists course_handoffs_read on public.course_handoffs;
 create policy course_handoffs_read on public.course_handoffs
   for select to authenticated using (true);
 
+drop policy if exists course_handoffs_insert on public.course_handoffs;
 create policy course_handoffs_insert on public.course_handoffs
   for insert to authenticated
   with check (
@@ -562,8 +598,11 @@ create table if not exists public.course_progress (
 
 alter table public.course_progress enable row level security;
 
+drop policy if exists course_progress_read   on public.course_progress;
 create policy course_progress_read   on public.course_progress for select to authenticated using (true);
+drop policy if exists course_progress_insert on public.course_progress;
 create policy course_progress_insert on public.course_progress for insert to authenticated with check (true);
+drop policy if exists course_progress_update on public.course_progress;
 create policy course_progress_update on public.course_progress for update to authenticated using (true) with check (true);
 
 -- No delete policy.
@@ -594,8 +633,10 @@ create table if not exists public.courses (
 
 alter table public.courses enable row level security;
 
+drop policy if exists courses_read on public.courses;
 create policy courses_read on public.courses
   for select to authenticated using (true);
+drop policy if exists courses_write on public.courses;
 create policy courses_write on public.courses
   for all to authenticated
   using (public.is_admin() or public.is_dev())
@@ -620,14 +661,17 @@ create table if not exists public.app_metadata (
 
 alter table public.app_metadata enable row level security;
 
+drop policy if exists app_metadata_setup_read on public.app_metadata;
 create policy app_metadata_setup_read on public.app_metadata
   for select to anon, authenticated
   using (id = 'setup');
 
+drop policy if exists app_metadata_setup_write on public.app_metadata;
 create policy app_metadata_setup_write on public.app_metadata
   for all to authenticated
   using (id = 'setup') with check (id = 'setup');
 
+drop policy if exists app_metadata_ingestion_read on public.app_metadata;
 create policy app_metadata_ingestion_read on public.app_metadata
   for select to authenticated
   using (id = 'ingestion' and public.is_staff());

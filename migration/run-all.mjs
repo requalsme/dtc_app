@@ -44,6 +44,27 @@ async function loadEnv() {
   }
 }
 
+// The service-account key is a large multi-line JSON blob that is miserable to
+// paste into a .env. If it has been downloaded to firebase-key.json instead,
+// pick it up from there — same value, far less chance of a mangled paste.
+async function loadFirebaseKeyFile() {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) return;
+  for (const name of ["firebase-key.json", "serviceAccount.json"]) {
+    try {
+      const raw = await readFile(join(ROOT, name), "utf8");
+      JSON.parse(raw); // fail here, not deep inside the export
+      process.env.FIREBASE_SERVICE_ACCOUNT = raw;
+      console.log(`  using ${name} for Firebase credentials`);
+      return;
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error(`${name} is not valid JSON — re-download it from the Firebase console.`);
+      }
+      /* not present; try the next name */
+    }
+  }
+}
+
 const REQUIRED = {
   SUPABASE_DB_URL:
     "Supabase dashboard → Project settings → Database → Connection string → URI\n" +
@@ -52,7 +73,9 @@ const REQUIRED = {
   SUPABASE_SERVICE_ROLE_KEY:
     "Supabase dashboard → Project settings → API → service_role (keep this secret)",
   FIREBASE_SERVICE_ACCOUNT:
-    "the existing Firebase key, e.g.  netlify env:get FIREBASE_SERVICE_ACCOUNT",
+    "Firebase console > dtcapp-24504 > Project settings > Service accounts > " +
+    "Generate new private key. Save it as firebase-key.json in the repo root and " +
+    "leave this variable empty - the runner reads the file.",
 };
 
 function checkConfig() {
@@ -164,6 +187,7 @@ async function verify() {
 
 async function main() {
   await loadEnv();
+  await loadFirebaseKeyFile();
 
   console.log(DRY ? "\nDRY RUN — nothing will be written.\n" : "\nFirebase → Supabase migration\n");
   if (!checkConfig()) process.exit(1);

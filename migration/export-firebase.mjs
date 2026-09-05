@@ -117,6 +117,19 @@ async function exportMetadata() {
 }
 
 async function exportStorage() {
+  // Storage may never have been provisioned. Projects created after ~Oct 2024
+  // need the paid plan to use Cloud Storage at all, and billing on this project
+  // is closed - so a missing bucket is an expected finding, not a failure. It
+  // is reported rather than thrown, because the Firestore export beside it is
+  // the part that actually carries the client records.
+  const [bucketExists] = await bucket.exists();
+  if (!bucketExists) {
+    console.log("  no Storage bucket on this project - nothing to export.");
+    console.log("  (Cloud Storage was never enabled here, so no file was ever stored.)");
+    await writeFile(join(OUT, "storage-manifest.json"), "[]");
+    return 0;
+  }
+
   const [files] = await bucket.getFiles();
   const manifest = [];
   let bytes = 0;

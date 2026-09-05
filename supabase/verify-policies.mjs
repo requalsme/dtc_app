@@ -86,17 +86,19 @@ async function expect(label, fn, wanted) {
   ok ? pass++ : fail++;
 }
 
-const anonRows = async (t) => {
-  const r = await anon(`${t}?select=*&limit=5`);
+const anonSeesProbe = async (t) => {
+  const pk = pkOf(SEEDABLE[t]);
+  const r = await anon(`${t}?select=${pk}&${pk}=eq.${PROBE}`);
   if (!r.ok) return "denied";
   const j = await r.json();
-  return Array.isArray(j) ? `${j.length} row(s)` : "denied";
+  return Array.isArray(j) && j.length === 0 ? "denied" : "LEAKED";
 };
 
-const serviceRows = async (t) => {
-  const r = await service(`${t}?select=*&limit=5`);
+const probeVisibleToService = async (t) => {
+  const pk = pkOf(SEEDABLE[t]);
+  const r = await service(`${t}?select=${pk}&${pk}=eq.${PROBE}`);
   const j = await r.json();
-  return Array.isArray(j) ? `${j.length} row(s)` : "denied";
+  return Array.isArray(j) && j.length === 1 ? "visible" : "not visible";
 };
 
 try {
@@ -106,12 +108,12 @@ try {
 
   console.log("\nSanity check - the rows really are there\n");
   for (const t of seeded.slice(0, 3)) {
-    await expect(`${t} has a row when read with the service key`, () => serviceRows(t), "1 row(s)");
+    await expect(`${t}: the planted probe really is there`, () => probeVisibleToService(t), "visible");
   }
 
   console.log("\nSigned-out (anon key) - a real row must still be invisible\n");
   for (const t of seeded) {
-    await expect(`${t} hides an existing row from a signed-out caller`, () => anonRows(t), "0 row(s)");
+    await expect(`${t} hides the probe from a signed-out caller`, () => anonSeesProbe(t), "denied");
   }
 
   console.log("\nWrites a signed-out caller must not be able to make\n");

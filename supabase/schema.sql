@@ -161,6 +161,16 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- Server-side writes are exempt, and must be: firestore.rules only ever
+  -- governed the browser, while the Admin SDK bypassed it entirely - which is
+  -- how devAccess came to be set in the first place. auth.uid() is null exactly
+  -- when there is no end-user session, i.e. the service-role key. An anon
+  -- caller also has a null uid but is refused by the users_insert policy
+  -- before this trigger can run, so this widens nothing a user can reach.
+  if auth.uid() is null then
+    return new;
+  end if;
+
   if tg_op = 'INSERT' then
     if new.dev_access is true and not (public.is_admin() or public.is_dev()) then
       raise exception 'devAccess can only be granted by an administrator or dev user';

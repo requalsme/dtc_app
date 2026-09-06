@@ -149,7 +149,7 @@ export function AuditLog() {
             }}>{fmtTime(r.timestamp)}</span>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, minWidth: 0 }}>
               {isSystem
-                ? <span style={{ display: "flex", color: "var(--text-quiet)" }}><Icon name="settings" size={15} /></span>
+                ? <span style={{ display: "flex", color: "var(--text-quiet)" }}><Icon name="refresh" size={15} /></span>
                 : <Avatar name={r.actor || "?"} size={22} role={r.role === "caregiver" ? "caregiver" : "office"} />}
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.actor || "System"}</span>
             </span>

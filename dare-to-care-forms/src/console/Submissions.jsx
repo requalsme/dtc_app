@@ -20,8 +20,8 @@ const SUB_COLS = "minmax(140px,1.7fr) minmax(90px,1.1fr) minmax(90px,1fr) max-co
 
 const STATUS_STAMP = {
   submitted: ["info", "Submitted"],
-  reviewed: ["ok", "Reviewed"],
-  needsCorrection: ["warn", "Needs correction"],
+  reviewed: ["success", "Reviewed"],
+  needsCorrection: ["warning", "Needs correction"],
 };
 
 const relTime = (iso) => {
@@ -130,7 +130,7 @@ export function SubmissionsLedger({ onView }) {
           </div>
 
           {filtered.map((s) => {
-            const stamp = STATUS_STAMP[s.status] || ["info", s.status || "—"];
+            const stamp = STATUS_STAMP[s.status] || ["neutral", s.status || "—"];
             return (
               <div
                 key={s.id}

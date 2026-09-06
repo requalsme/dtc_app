@@ -23,8 +23,8 @@ import { ClientKeyFacts } from "../components/ClientKeyFacts";
 
 const STATUS_STAMP = {
   submitted: ["info", "Submitted"],
-  reviewed: ["ok", "Reviewed"],
-  needsCorrection: ["warn", "Needs correction"],
+  reviewed: ["success", "Reviewed"],
+  needsCorrection: ["warning", "Needs correction"],
 };
 
 // The store's checklist vocabulary, in DocumentSlot's terms.
@@ -48,7 +48,7 @@ function ClientRecord({ client, onBack }) {
   // reader nothing except that the app has a field for it.
   const facts = [
     client.city && { icon: "home", text: client.city },
-    client.phone && { icon: "phone", text: client.phone },
+    client.phone && { icon: null, text: client.phone },
     client.dob && { icon: "clock", text: "DOB " + (fmtDate(client.dob) || client.dob) },
     client.physician && { icon: "activity", text: client.physician },
     client.payerType && { icon: "shield", text: client.payerType },
@@ -71,7 +71,9 @@ function ClientRecord({ client, onBack }) {
 
       {facts.length > 0 && (
         <div style={{ display: "flex", gap: 10, marginBottom: 28, flexWrap: "wrap" }}>
-          {facts.map((f) => <Chip key={f.text} icon={<Icon name={f.icon} size={14} />}>{f.text}</Chip>)}
+          {facts.map((f) => (
+            <Chip key={f.text} icon={f.icon ? <Icon name={f.icon} size={14} /> : undefined}>{f.text}</Chip>
+          ))}
         </div>
       )}
 
@@ -120,7 +122,7 @@ function ClientRecord({ client, onBack }) {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {submissions.map((s) => {
-                const stamp = STATUS_STAMP[s.status] || ["info", s.status || "—"];
+                const stamp = STATUS_STAMP[s.status] || ["neutral", s.status || "—"];
                 return (
                   <RecordRow
                     key={s.id}

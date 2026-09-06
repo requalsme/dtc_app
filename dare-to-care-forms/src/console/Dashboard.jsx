@@ -18,8 +18,8 @@ const COLS = "minmax(120px,1.6fr) minmax(90px,1.1fr) minmax(90px,1fr) max-conten
 // Sentence case throughout, per the design system's casing rule.
 const STATUS_STAMP = {
   submitted: ["info", "Submitted"],
-  reviewed: ["ok", "Reviewed"],
-  needsCorrection: ["warn", "Needs correction"],
+  reviewed: ["success", "Reviewed"],
+  needsCorrection: ["warning", "Needs correction"],
 };
 
 const relTime = (iso) => {
@@ -159,7 +159,7 @@ export function ConsoleDashboard({ basePath = "/admin" }) {
               No forms have been filed yet.
             </div>
           ) : recent.map((s) => {
-            const stamp = STATUS_STAMP[s.status] || ["info", s.status || "—"];
+            const stamp = STATUS_STAMP[s.status] || ["neutral", s.status || "—"];
             return (
               <div key={s.id} className="ledger-row" style={{ gridTemplateColumns: COLS }}>
                 <span style={{ fontSize: 15.5, fontWeight: 600, letterSpacing: "-0.008em" }}>

@@ -12,7 +12,7 @@
 // Collapsing them into "incomplete" would hide which problem you have.
 
 import React from "react";
-import { Icon, Button, Stamp, MonoLabel, Avatar, Tabs, Input, DocumentSlot, RecordRow, Chip, EmptyState } from "../design/index.js";
+import { Icon, Button, Stamp, MonoLabel, Avatar, Tabs, Input, Textarea, Panel, DocumentSlot, RecordRow, Chip, EmptyState } from "../design/index.js";
 import { SheetHeader } from "./Chrome.jsx";
 import { useStore } from "./useStore.js";
 // The single most useful thing on a client's file: allergies, DNR, emergency
@@ -170,10 +170,69 @@ function ClientRecord({ client, onBack }) {
   );
 }
 
+const EMPTY_CLIENT = {
+  name: "", dob: "", mrn: "", physician: "", allergies: "",
+  phone: "", address: "", primaryContact: "", notes: "",
+};
+
+/** Adding a client. Carried over from the admin screen this replaces — without
+ *  it the redesign would have been a downgrade for the one workflow that
+ *  matters most right now, which is importing the CareTime roster. */
+function AddClient({ onAdded }) {
+  const Store = useStore();
+  const [form, setForm] = React.useState(EMPTY_CLIENT);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  const set = (k) => (e) => { setForm({ ...form, [k]: e.target.value }); setError(""); };
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) { setError("A name is required."); return; }
+    setBusy(true);
+    try {
+      await Store.createClient({ ...form, name: form.name.trim() });
+      setForm(EMPTY_CLIENT);
+      onAdded && onAdded(form.name.trim());
+    } catch (err) {
+      setError(err.message || "That didn't save. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save}>
+      <Panel label="Add a client" padding={20}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Input label="Full name" value={form.name} onChange={set("name")} error={error || undefined} required />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Input label="Date of birth" type="date" value={form.dob} onChange={set("dob")} />
+            <Input label="MRN" value={form.mrn} onChange={set("mrn")} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Input label="Phone" type="tel" value={form.phone} onChange={set("phone")} />
+            <Input label="Primary contact" value={form.primaryContact} onChange={set("primaryContact")} />
+          </div>
+          <Input label="Physician" value={form.physician} onChange={set("physician")} />
+          <Input label="Allergies" value={form.allergies} onChange={set("allergies")} hint="Anyone entering the home needs this first" />
+          <Input label="Address" value={form.address} onChange={set("address")} />
+          <Textarea label="Care notes" value={form.notes} onChange={set("notes")} rows={3} />
+          <Button type="submit" fullWidth disabled={!form.name.trim() || busy} iconLeft={<Icon name="plus" size={16} />}>
+            {busy ? "Saving…" : "Save client"}
+          </Button>
+        </div>
+      </Panel>
+    </form>
+  );
+}
+
 export function ClientsScreen() {
   const Store = useStore();
   const [search, setSearch] = React.useState("");
   const [open, setOpen] = React.useState(null);
+  const [adding, setAdding] = React.useState(false);
+  const [justAdded, setJustAdded] = React.useState("");
 
   const all = Store.clients;
   const clients = all
@@ -192,7 +251,28 @@ export function ClientsScreen() {
         eyebrow="Office manager / Clients"
         title="Clients"
         lead="Everyone currently on the roster. Open a file to see every form and document held about that person."
+        actions={
+          <Button
+            variant={adding ? "outline" : "primary"}
+            iconLeft={<Icon name={adding ? "x" : "plus"} size={16} />}
+            onClick={() => { setAdding(!adding); setJustAdded(""); }}
+          >
+            {adding ? "Close" : "Add client"}
+          </Button>
+        }
       />
+
+      {justAdded && (
+        <div style={{ marginBottom: 20, fontSize: 14.5, color: "var(--status-success)" }}>
+          {justAdded} added to the roster.
+        </div>
+      )}
+
+      {adding && (
+        <div style={{ maxWidth: 520, marginBottom: 32 }}>
+          <AddClient onAdded={(name) => { setAdding(false); setJustAdded(name); }} />
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 12, margin: "0 0 26px", flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ width: 320 }}>

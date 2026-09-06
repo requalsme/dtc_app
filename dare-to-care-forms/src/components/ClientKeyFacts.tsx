@@ -14,6 +14,10 @@
 // @ts-ignore
 import { DTCStore as Store } from "./store.js";
 import { fmtDate } from "../utils/format";
+import {
+  Icon, Panel, Text, EmptyState,
+  // @ts-ignore - design system is untyped JSX
+} from "../design/index.js";
 
 type Fact = {
   label: string;
@@ -73,61 +77,64 @@ export function ClientKeyFacts({ clientId }: { clientId: string }) {
 
   if (subs.length === 0) {
     return (
-      <div className="card" style={{ padding: 16, color: "var(--ink-3)", fontSize: 13 }}>
-        No forms filed yet. Once the intake packet or a care plan is completed,
-        the key details are pulled together here automatically.
-      </div>
+      <EmptyState
+        title="Nothing to summarise yet"
+        description="Once the intake packet or a care plan is filed, the details worth knowing at a glance are gathered here automatically."
+      />
     );
   }
 
   if (found.length === 0) {
     return (
-      <div className="card" style={{ padding: 16, color: "var(--ink-3)", fontSize: 13 }}>
-        {subs.length} form{subs.length === 1 ? "" : "s"} filed, but none of them
-        captured the intake details yet — those come from the Client Assessment
-        or Client Care Plan.
-      </div>
+      <EmptyState
+        title="No intake details yet"
+        description={`${subs.length} form${subs.length === 1 ? "" : "s"} filed, but none of them captured the intake details — those come from the Client Assessment or the Client Care Plan.`}
+      />
     );
   }
 
   return (
-    <div className="card" style={{ padding: "6px 16px 12px" }}>
-      {found.map((f) => (
+    <Panel padding={0}>
+      {found.map((f, i) => (
         <div
           key={f.label}
           style={{
             display: "flex",
-            gap: 12,
-            padding: "9px 0",
-            borderBottom: "1px solid var(--border)",
+            gap: 14,
+            padding: "11px 16px",
+            borderTop: i ? "1px solid var(--border-hair)" : "none",
             alignItems: "baseline",
+            // An allergy or a DNR is the reason this panel exists, so it is
+            // marked on the row rather than left to be found in the text.
+            background: f.alert ? "var(--warning-bg)" : "transparent",
           }}
         >
-          <span style={{ minWidth: 160, flex: "none", fontSize: 12, color: "var(--ink-3)" }}>
+          <span style={{ minWidth: 150, flex: "none", fontSize: 12.5, color: "var(--text-secondary)" }}>
             {f.label}
           </span>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 13,
-              fontWeight: 500,
-              color: f.alert ? "var(--amber)" : "var(--ink)",
-              whiteSpace: "pre-wrap",
-            }}
-          >
+          <span style={{
+            flex: 1,
+            fontSize: 13.5,
+            fontWeight: 600,
+            color: f.alert ? "var(--status-warning)" : "var(--text-body)",
+            whiteSpace: "pre-wrap",
+          }}>
+            {f.alert && <Icon name="alert" size={13} style={{ marginRight: 6, verticalAlign: "-2px" }} />}
             {f.value}
           </span>
           {/* Provenance: which filed form this came from, so it can be checked. */}
-          <span style={{ flex: "none", fontSize: 11, color: "var(--ink-4)", textAlign: "right" }}>
+          <span style={{ flex: "none", fontSize: 11.5, color: "var(--text-quiet)", textAlign: "right", maxWidth: 170 }}>
             {f.fromForm}
             {f.fromDate ? ` · ${fmtDate(f.fromDate)}` : ""}
           </span>
         </div>
       ))}
-      <div style={{ fontSize: 11, color: "var(--ink-4)", paddingTop: 10 }}>
-        Pulled from filed forms — always the most recent value. Correct one of
-        these by filing an updated form, not by editing here.
+      <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border-hair)" }}>
+        <Text role="body" color="quiet" style={{ fontSize: 12, lineHeight: 1.6 }}>
+          Read from filed forms — always the most recent value. To correct one of these, file an
+          updated form rather than editing it here.
+        </Text>
       </div>
-    </div>
+    </Panel>
   );
 }

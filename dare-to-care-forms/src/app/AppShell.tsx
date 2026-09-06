@@ -6,6 +6,8 @@ import { DTCStore as Store } from "../components/store";
 import { supabase } from "../config/supabase";
 // @ts-ignore - JS module without types
 import { update } from "../lib/db.js";
+// @ts-ignore - design system is untyped JSX
+import { Dialog, Button, Input } from "../design/index.js";
 /** Actions the shell owns, made reachable from the screens it renders. */
 interface ShellActions {
   openLinkPhone: () => void;
@@ -558,58 +560,61 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {showLinkPhone && (
-        <div className="modal-overlay" onClick={() => !isLinking && setShowLinkPhone(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-            <h3 style={{ marginBottom: '1rem' }}>Link Phone Number</h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--slate-500)', marginBottom: '1.5rem' }}>
-              Link your phone number to sign in using SMS verification codes instead of a password.
-            </p>
-
-            {linkError && <div className="login-error" style={{ marginBottom: '1rem' }}>{linkError}</div>}
-
-            {!linkConfirmation ? (
-              <>
-                <label className="login-field">
-                  <span>Phone Number</span>
-                  <input 
-                    type="tel"
-                    placeholder="(555) 123-4567"
-                    value={phoneToLink}
-                    onChange={(e) => setPhoneToLink(e.target.value)}
-                    disabled={isLinking}
-                  />
-                </label>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '1.5rem' }}>
-                  <button className="dbtn dbtn-secondary" onClick={() => setShowLinkPhone(false)}>Cancel</button>
-                  <button className="dbtn dbtn-primary" onClick={handleSendLinkCode} disabled={isLinking || !phoneToLink}>
-                    {isLinking ? "Sending..." : "Send Code"}
-                  </button>
-                </div>
-              </>
+      {/* Two steps, one dialog: enter the number, then the code that was sent
+          to it. The step is decided by whether a code has gone out, so there
+          is no way to be on the wrong one. */}
+      <Dialog
+        open={showLinkPhone}
+        title={linkConfirmation ? "Enter your code" : "Link your phone number"}
+        description={
+          linkConfirmation
+            ? `We sent a code to ${linkConfirmation.phone}.`
+            : "Sign in with a texted code instead of a password."
+        }
+        icon={<NavIcon name="phone" />}
+        onClose={() => !isLinking && setShowLinkPhone(false)}
+        width={420}
+        footer={
+          <>
+            <Button variant="ghost" disabled={isLinking} onClick={() => setShowLinkPhone(false)}>Cancel</Button>
+            {linkConfirmation ? (
+              <Button disabled={isLinking || !linkCode} onClick={handleVerifyLinkCode}>
+                {isLinking ? "Verifying…" : "Verify and link"}
+              </Button>
             ) : (
-              <>
-                <label className="login-field">
-                  <span>Verification Code</span>
-                  <input 
-                    type="text"
-                    placeholder="123456"
-                    value={linkCode}
-                    onChange={(e) => setLinkCode(e.target.value)}
-                    disabled={isLinking}
-                  />
-                </label>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '1.5rem' }}>
-                  <button className="dbtn dbtn-secondary" onClick={() => setShowLinkPhone(false)}>Cancel</button>
-                  <button className="dbtn dbtn-primary" onClick={handleVerifyLinkCode} disabled={isLinking || !linkCode}>
-                    {isLinking ? "Verifying..." : "Verify & Link"}
-                  </button>
-                </div>
-              </>
+              <Button disabled={isLinking || !phoneToLink} onClick={handleSendLinkCode}>
+                {isLinking ? "Sending…" : "Send code"}
+              </Button>
             )}
-          </div>
-        </div>
-      )}
+          </>
+        }
+      >
+        {linkConfirmation ? (
+          <Input
+            label="Verification code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="123456"
+            value={linkCode}
+            onChange={(e: any) => setLinkCode(e.target.value)}
+            disabled={isLinking}
+            error={linkError || undefined}
+          />
+        ) : (
+          <Input
+            label="Phone number"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="(555) 123-4567"
+            value={phoneToLink}
+            onChange={(e: any) => setPhoneToLink(e.target.value)}
+            disabled={isLinking}
+            error={linkError || undefined}
+            hint="A US mobile number that can receive texts."
+          />
+        )}
+      </Dialog>
     </div>
   );
 }

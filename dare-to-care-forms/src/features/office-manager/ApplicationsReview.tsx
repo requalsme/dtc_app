@@ -2,21 +2,30 @@
 //
 // Employment applications submitted on careers.daretocarehomecare.com
 // (dtc-jobapp, a separate Netlify site) land in this project's `applications`
-// Firestore collection and show up here. Shared between the Office Manager
-// and Admin nav — same component, same data, both routes just mount it.
+// table and show up here. Shared between the Office Manager and Admin nav —
+// same component, same data, both routes just mount it.
 //
 // Scope is deliberately narrow: view what came in, mark it reviewed. Turning
-// a reviewed application into a hired new-hire account is a separate,
-// heavier decision (creating a login, starting a packet) and is not this
-// screen's job — see NewHireReview for what happens once someone is actually
-// hired on.
+// a reviewed application into a hired new-hire account is a separate, heavier
+// decision (creating a login, starting a packet) and is not this screen's job
+// — see NewHireReview for what happens once someone is actually hired on.
+//
+// The applicant's identifying details are the sensitive part of this screen.
+// The full SSN is never held here; only its last four digits are stored, and
+// they are shown masked, because the number's real purpose is the state
+// background checks and those are run elsewhere.
 
 import { useEffect, useMemo, useState } from "react";
 // @ts-ignore
-import { Icon } from "../../components/fields.jsx";
-// @ts-ignore
 import { DTCStore as Store } from "../../components/store.js";
 import { fmtDate } from "../../utils/format";
+import {
+  Icon, Button, Stamp, MonoLabel, Panel, Input, Select, Textarea,
+  RecordRow, EmptyState, Chip, Text,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
+// @ts-ignore - untyped JSX
+import { SheetHeader, useAreaLabel } from "../../console/Chrome.jsx";
 
 const relTime = (iso: string) => {
   if (!iso) return "";
@@ -40,9 +49,24 @@ function fieldLabel(key: string) {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function statusChip(status: string) {
-  if (status === "reviewed") return <span className="spill pub"><span className="pip" />Reviewed</span>;
-  return <span className="spill ver"><span className="pip" />Submitted</span>;
+const StatusStamp = ({ status }: { status: string }) =>
+  status === "reviewed"
+    ? <Stamp tone="success">Reviewed</Stamp>
+    : <Stamp tone="brand">Submitted</Stamp>;
+
+/** One fact from the application, label left and value right. */
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{
+      display: "flex", gap: 16, alignItems: "baseline", justifyContent: "space-between",
+      padding: "10px 0", borderTop: "1px solid var(--border-hair)",
+    }}>
+      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{label}</span>
+      <span style={{ fontSize: 13.5, color: "var(--text-body)", textAlign: "right", wordBreak: "break-word" }}>
+        {value}
+      </span>
+    </div>
+  );
 }
 
 // ── File row ─────────────────────────────────────────────────────────────
@@ -65,15 +89,22 @@ function FileRow({ label, blobKey, sizeBytes }: { label: string; blobKey: string
   };
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ fontSize: 13 }}>
-        {label}
-        {sizeBytes ? <span style={{ color: "var(--ink-3)" }}> · {Math.round(sizeBytes / 1024)} KB</span> : null}
-      </span>
-      <button className="dbtn dbtn-ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={busy} onClick={open}>
-        <Icon n="eye" s={13} /> {busy ? "Opening…" : "View"}
-      </button>
-      {error && <div className="form-error" style={{ marginLeft: 10 }}>{error}</div>}
+    <div>
+      <RecordRow
+        icon={<Icon name="file" size={17} />}
+        title={label}
+        subtitle={sizeBytes ? `${Math.round(sizeBytes / 1024)} KB` : ""}
+        actions={
+          <Button size="sm" variant="outline" disabled={busy} iconLeft={<Icon name="eye" size={14} />} onClick={open}>
+            {busy ? "Opening…" : "View"}
+          </Button>
+        }
+      />
+      {error && (
+        <Text role="body" style={{ fontSize: 12.5, color: "var(--status-danger)", display: "block", marginTop: 6 }}>
+          {error}
+        </Text>
+      )}
     </div>
   );
 }
@@ -81,6 +112,7 @@ function FileRow({ label, blobKey, sizeBytes }: { label: string; blobKey: string
 // ── Detail ───────────────────────────────────────────────────────────────
 
 function ApplicationDetail({ application, onClose, onToast }: { application: any; onClose: () => void; onToast: (m: string) => void }) {
+  const area = useAreaLabel();
   const [liveApp, setLiveApp] = useState(application);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -107,93 +139,131 @@ function ApplicationDetail({ application, onClose, onToast }: { application: any
 
   const data = liveApp.data || {};
   const otherFields = Object.keys(data).filter((k) => !HIDDEN_FIELD_KEYS.has(k) && data[k]);
+  const files = liveApp.files || [];
+  const hasFiles = !!liveApp.pdf?.storagePath || files.length > 0;
+  const pending = liveApp.status === "submitted";
 
   return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <button className="dbtn dbtn-ghost" style={{ marginBottom: 10, padding: "6px 12px", fontSize: 12 }} onClick={onClose}>
-            <Icon n="arrowLeft" s={14} /> All applications
-          </button>
-          <h1>{liveApp.applicant}</h1>
-          <p>
-            {liveApp.position || "Position not specified"} · applied {relTime(liveApp.submittedAt)}
-            {liveApp.email && <> · {liveApp.email}</>}
-            {liveApp.reviewedBy && <span> · Reviewed by {liveApp.reviewedBy}</span>}
-          </p>
-        </div>
-        <div className="actions">
-          {liveApp.status === "submitted" ? (
-            <button className="dbtn dbtn-primary" disabled={busy} onClick={markReviewed}>
-              <Icon n="check" s={15} /> {busy ? "Marking…" : "Mark reviewed"}
-            </button>
-          ) : (
-            statusChip(liveApp.status)
-          )}
-        </div>
+    <>
+      <SheetHeader
+        eyebrow={`${area} / Applications / ${liveApp.applicant}`}
+        title={liveApp.applicant}
+        lead={[
+          liveApp.position || "Position not specified",
+          `applied ${relTime(liveApp.submittedAt)}`,
+          liveApp.reviewedBy ? `reviewed by ${liveApp.reviewedBy}` : null,
+        ].filter(Boolean).join(" · ")}
+        actions={
+          <>
+            <Button variant="outline" iconLeft={<Icon name="arrowLeft" size={16} />} onClick={onClose}>
+              All applications
+            </Button>
+            {pending && (
+              <Button disabled={busy} iconLeft={<Icon name="check" size={16} />} onClick={markReviewed}>
+                {busy ? "Marking…" : "Mark reviewed"}
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 28, flexWrap: "wrap", alignItems: "center" }}>
+        <StatusStamp status={liveApp.status} />
+        {liveApp.email && <Chip icon={<Icon name="send" size={14} />}>{liveApp.email}</Chip>}
+        {liveApp.phone && <Chip icon={<Icon name="idCard" size={14} />}>{liveApp.phone}</Chip>}
       </div>
 
-      {liveApp.status === "submitted" && (
-        <div className="ds-panel" style={{ padding: 16, marginBottom: 16 }}>
-          <label className="form-label" htmlFor="app-note">Review note (optional)</label>
-          <textarea
-            id="app-note"
-            className="insp-input"
-            rows={2}
-            placeholder="e.g. Strong background, schedule a phone screen."
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </div>
-      )}
+      <div className="split" style={{ alignItems: "start" }}>
+        <section style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+          <Panel label="What they told us">
+            {liveApp.ssn_last4 && (
+              <Fact
+                label="SSN"
+                value={
+                  <span style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.05em" }}>
+                    ••• •• {liveApp.ssn_last4}
+                  </span>
+                }
+              />
+            )}
+            {otherFields.map((k) => (
+              <Fact key={k} label={fieldLabel(k)} value={String(data[k])} />
+            ))}
+            {otherFields.length === 0 && !liveApp.ssn_last4 && (
+              <Text role="body" color="quiet" style={{ fontSize: 13.5 }}>
+                No additional fields were recorded on this application.
+              </Text>
+            )}
+          </Panel>
 
-      {liveApp.reviewNote && (
-        <div className="ds-panel" style={{ padding: 16, marginBottom: 16 }}>
-          <div className="section-label" style={{ marginBottom: 6 }}>Review note</div>
-          <div style={{ fontSize: 13, color: "var(--ink-2)", fontStyle: "italic" }}>"{liveApp.reviewNote}"</div>
-        </div>
-      )}
+          <div>
+            <MonoLabel rule count={files.length + (liveApp.pdf?.storagePath ? 1 : 0)} style={{ marginBottom: 12 }}>
+              Documents
+            </MonoLabel>
+            {!hasFiles ? (
+              <Text role="body" color="quiet" style={{ fontSize: 13.5 }}>
+                No files came with this application.
+              </Text>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {liveApp.pdf?.storagePath && (
+                  <FileRow label="Full application packet (PDF)" blobKey={liveApp.pdf.storagePath} />
+                )}
+                {files.map((f: any) => (
+                  <FileRow key={f.storagePath} label={f.originalName || f.field} blobKey={f.storagePath} sizeBytes={f.sizeBytes} />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
 
-      <div style={{ maxWidth: 700 }}>
-        <div className="ds-panel" style={{ padding: 16, marginBottom: 16 }}>
-          <div className="section-label" style={{ marginBottom: 8 }}>Application details</div>
-          {liveApp.ssn_last4 && (
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 13, color: "var(--ink-3)" }}>SSN</span>
-              <span style={{ fontSize: 13 }}>••• •• {liveApp.ssn_last4}</span>
-            </div>
+        <aside style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {pending && (
+            <Panel label="Review note">
+              <Textarea
+                rows={3}
+                placeholder="e.g. Strong background, schedule a phone screen."
+                value={note}
+                onChange={(e: any) => setNote(e.target.value)}
+                hint="Optional. Saved against the application when you mark it reviewed."
+              />
+              <Button
+                fullWidth
+                style={{ marginTop: 14 }}
+                disabled={busy}
+                iconLeft={<Icon name="check" size={16} />}
+                onClick={markReviewed}
+              >
+                {busy ? "Marking…" : "Mark reviewed"}
+              </Button>
+            </Panel>
           )}
-          {otherFields.map((k) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{fieldLabel(k)}</span>
-              <span style={{ fontSize: 13, textAlign: "right" }}>{String(data[k])}</span>
-            </div>
-          ))}
-          {otherFields.length === 0 && !liveApp.ssn_last4 && (
-            <div style={{ fontSize: 13, color: "var(--ink-3)" }}>No additional fields recorded.</div>
-          )}
-        </div>
 
-        <div className="ds-panel" style={{ padding: 16 }}>
-          <div className="section-label" style={{ marginBottom: 8 }}>Documents</div>
-          {liveApp.pdf?.storagePath && (
-            <FileRow label="Full application packet (PDF)" blobKey={liveApp.pdf.storagePath} />
+          {liveApp.reviewNote && (
+            <Panel label="Review note" tone="sunken">
+              <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.6, fontStyle: "italic" }}>
+                “{liveApp.reviewNote}”
+              </Text>
+            </Panel>
           )}
-          {(liveApp.files || []).map((f: any) => (
-            <FileRow key={f.storagePath} label={f.originalName || f.field} blobKey={f.storagePath} sizeBytes={f.sizeBytes} />
-          ))}
-          {!liveApp.pdf?.storagePath && (liveApp.files || []).length === 0 && (
-            <div style={{ fontSize: 13, color: "var(--ink-3)" }}>No files on this application.</div>
-          )}
-        </div>
+
+          <Panel label="What happens next" tone="sunken">
+            <Text role="body" color="secondary" style={{ fontSize: 13, lineHeight: 1.65 }}>
+              Marking an application reviewed records that somebody has read it. Hiring is a
+              separate step — creating a login and starting a new-hire packet happens on the
+              New hires screen, not here.
+            </Text>
+          </Panel>
+        </aside>
       </div>
-    </div>
+    </>
   );
 }
 
 // ── List ─────────────────────────────────────────────────────────────────
 
 export function ApplicationsReview({ onToast }: { onToast: (m: string) => void }) {
+  const area = useAreaLabel();
   const [, force] = useState(0);
   const [viewing, setViewing] = useState<any>(null);
   const [filterStatus, setFilterStatus] = useState("");
@@ -223,67 +293,62 @@ export function ApplicationsReview({ onToast }: { onToast: (m: string) => void }
   const pendingCount = applications.filter((a: any) => a.status === "submitted").length;
 
   return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <h1>Applications</h1>
-          <p>
-            {applications.length} received from careers.daretocarehomecare.com
-            {pendingCount > 0 && ` · ${pendingCount} awaiting review`}
-          </p>
+    <>
+      <SheetHeader
+        eyebrow={`${area} / Applications`}
+        title="Applications"
+        lead={`Everyone who has applied through careers.daretocarehomecare.com.${
+          pendingCount > 0 ? ` ${pendingCount} ${pendingCount === 1 ? "is" : "are"} waiting to be read.` : ""
+        }`}
+      />
+
+      <div style={{ display: "flex", gap: 12, margin: "0 0 26px", flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ width: 300 }}>
+          <Input
+            placeholder="Search by name, position, email"
+            value={search}
+            onChange={(e: any) => setSearch(e.target.value)}
+            iconLeft={<Icon name="search" size={17} />}
+          />
         </div>
+        <div style={{ width: 190 }}>
+          <Select
+            value={filterStatus}
+            onChange={(e: any) => setFilterStatus(e.target.value)}
+            options={[
+              { value: "", label: "All statuses" },
+              { value: "submitted", label: "Awaiting review" },
+              { value: "reviewed", label: "Reviewed" },
+            ]}
+          />
+        </div>
+        <span style={{ flex: 1 }} />
+        <MonoLabel count={pendingCount}>Awaiting review</MonoLabel>
       </div>
 
-      <div className="ds-filters">
-        <input className="ds-search" placeholder="Search by name, position, email…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className="ds-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          <option value="submitted">Submitted</option>
-          <option value="reviewed">Reviewed</option>
-        </select>
-      </div>
-
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead>
-            <tr>
-              <th>Applicant</th>
-              <th>Position</th>
-              <th>Applied</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((a: any) => (
-              <tr key={a.id} onClick={() => setViewing(a)}>
-                <td>
-                  <span className="row-ic">
-                    <span className="ti"><Icon n="users" s={16} /></span>
-                    <span>
-                      <span className="cell-main">{a.applicant}</span>
-                      <span className="cell-sub">{a.email}</span>
-                    </span>
-                  </span>
-                </td>
-                <td style={{ color: "var(--ink-2)" }}>{a.position || "—"}</td>
-                <td style={{ color: "var(--ink-3)", fontSize: 12 }}>{relTime(a.submittedAt)}</td>
-                <td>{statusChip(a.status)}</td>
-                <td style={{ textAlign: "right" }}>
-                  <button className="dbtn dbtn-ghost" style={{ padding: "6px 11px", fontSize: 12 }} onClick={(e) => { e.stopPropagation(); setViewing(a); }}>
-                    <Icon n="eye" s={13} /> View
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr><td colSpan={5} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>
-                {applications.length === 0 ? "No applications yet." : "No applications match the current filters."}
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      {filtered.length === 0 ? (
+        <EmptyState
+          title={applications.length === 0 ? "No applications yet" : "Nothing matches that"}
+          description={applications.length === 0
+            ? "Applications submitted on the careers site land here automatically."
+            : "Try a different search, or clear the status filter."}
+        />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 880 }}>
+          {filtered.map((a: any) => (
+            <RecordRow
+              key={a.id}
+              icon={<Icon name="users" size={17} />}
+              title={a.applicant}
+              subtitle={[a.position, a.email].filter(Boolean).join(" · ")}
+              meta={relTime(a.submittedAt)}
+              stamp={<StatusStamp status={a.status} />}
+              accentEdge={a.status === "submitted"}
+              onClick={() => setViewing(a)}
+            />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

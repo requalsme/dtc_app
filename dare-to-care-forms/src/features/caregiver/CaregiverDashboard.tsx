@@ -1,12 +1,28 @@
+// The caregiver's four screens: today, forms, records, clients.
+//
+// This is the most-used surface in the product — a caregiver opens it between
+// visits, often on a phone, often in someone's front room. So it is organised
+// by urgency rather than by data type: what is late, what is due, what was
+// sent back to be fixed, and only then everything else.
+//
+// Corrections lead deliberately. A submission that came back needs the same
+// person to reopen it, and if that is buried under a list of completed work it
+// does not get done.
+
 import { useEffect, useState, useCallback } from "react";
-// @ts-ignore
-import { Icon } from "../../components/fields";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store";
 // @ts-ignore
 import { DTC as D } from "../../components/schemas";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate, todayLong } from "../../utils/format";
+import {
+  Icon, Button, Stamp, MonoLabel, Panel, Input, Select, RecordRow,
+  EmptyState, Chip, Text, MetricTile, Dialog,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
+// @ts-ignore - untyped JSX
+import { SheetHeader } from "../../console/Chrome.jsx";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -22,221 +38,188 @@ function isDueToday(dueDateStr: string) {
   return due.getTime() === today.getTime();
 }
 
-function priorityColor(p: string) {
-  if (p === "urgent") return "var(--red)";
-  if (p === "low") return "var(--ink-3)";
-  return "var(--accent)";
-}
+const greeting = () => {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+};
 
-// ── Sub-components ─────────────────────────────────────────────────────────
-
-
-function FormCard({ schemaKey, onStart }: { schemaKey: string; onStart: () => void }) {
+/** One publishable form, as something you start rather than something you read. */
+function FormRow({ schemaKey, onStart }: { schemaKey: string; onStart: () => void }) {
   const schema = getSchema(schemaKey);
   if (!schema) return null;
-  const policy = schema.category === "Policy";
   return (
-    <button className={`card formcard${policy ? " policy" : ""}`} onClick={onStart} style={{ marginTop: 10 }}>
-      <span className="ic"><Icon n={schema.icon} s={20} /></span>
-      <span className="meta">
-        <span className="nm">{schema.name}</span>
-        <span className="sub">
-          <span className="chip">{schema.category}</span>
-          <span> · {schema.estMin} min · {schema.sections.length} steps</span>
-        </span>
-      </span>
-      <Icon n="chevron" s={18} style={{ color: "var(--ink-4)" }} />
-    </button>
+    <RecordRow
+      icon={<Icon name={schema.category === "Policy" ? "shield" : "file"} size={17} />}
+      title={schema.name}
+      subtitle={`${schema.category} · ${schema.estMin} min · ${schema.sections.length} ${schema.sections.length === 1 ? "step" : "steps"}`}
+      stamp={<Stamp tone="brand">Start</Stamp>}
+      onClick={onStart}
+    />
   );
 }
 
-// ── Today Tab ──────────────────────────────────────────────────────────────
+// ── Today ──────────────────────────────────────────────────────────────────
 
 function TodayTab({ tasks, onStartTask, submissions }: any) {
   const currentUser = Store.currentUser;
   const clients = Store.clients;
 
-  // Filter to pending/late tasks for this caregiver's day
   const dueTasks = tasks.filter((t: any) =>
     (t.status === "pending" || t.status === "in_progress") &&
     (isDueToday(t.dueDate) || isLate(t.dueDate))
   );
-
   const corrections = submissions.filter((s: any) => s.status === "needsCorrection");
-
+  const upcoming = tasks.filter((t: any) =>
+    t.status === "pending" && !isDueToday(t.dueDate) && !isLate(t.dueDate)
+  );
   const totalDue = dueTasks.length + corrections.length;
+  const published = Store.publishedKeysFor("caregiver");
 
   return (
-    <div className="view">
-      <div className="appbar">
-        <div className="greet">Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}</div>
-        <div className="title-row">
-          <h2>{currentUser ? currentUser.name.split(" ")[0] : "Caregiver"}</h2>
-          <div className="avatar">{currentUser ? currentUser.initials : "CG"}</div>
-        </div>
-        <div className="datestrip"><span className="dot" />{todayLong}</div>
+    <>
+      <SheetHeader
+        eyebrow={todayLong}
+        title={`${greeting()}, ${currentUser ? currentUser.name.split(" ")[0] : "there"}`}
+        lead={
+          totalDue === 0
+            ? "Nothing is due today. Anything that comes in will show up here."
+            : `${totalDue} ${totalDue === 1 ? "thing needs" : "things need"} your attention today.`
+        }
+      />
+
+      <div style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+        gap: 12, marginBottom: 34, maxWidth: 700,
+      }}>
+        <MetricTile label="Due today" value={totalDue} tone={totalDue > 0 ? "alert" : "default"} />
+        <MetricTile label="My clients" value={clients.length} />
+        <MetricTile label="Filed" value={submissions.length} />
       </div>
 
-      <div className="pad" style={{ paddingTop: 0 }}>
-        <div className="statrow">
-          <div className="statbox">
-            <div className="n" style={{ color: totalDue > 0 ? "var(--red)" : "var(--accent)" }}>{totalDue}</div>
-            <div className="l">Due today</div>
-          </div>
-          <div className="statbox">
-            <div className="n">{clients.length}</div>
-            <div className="l">My clients</div>
-          </div>
-          <div className="statbox">
-            <div className="n">{submissions.length}</div>
-            <div className="l">Filed</div>
-          </div>
-        </div>
-
-        {/* Corrections needing attention */}
-        {corrections.length > 0 && (
-          <>
-            <div className="section-label" style={{ color: "var(--amber)" }}>
-              <Icon n="alert" s={14} style={{ marginRight: 5, verticalAlign: "-2px" }} />
-              Corrections needed
+      <div className="split" style={{ alignItems: "start" }}>
+        <section style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+          {corrections.length > 0 && (
+            <div>
+              <MonoLabel rule count={corrections.length} style={{ marginBottom: 12 }}>
+                Sent back to you
+              </MonoLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {corrections.map((sub: any) => {
+                  const schema = getSchema(sub.schemaKey);
+                  return (
+                    <RecordRow
+                      key={sub.id}
+                      icon={<Icon name="alert" size={17} />}
+                      title={schema?.name || sub.schemaKey}
+                      subtitle={[
+                        sub.clientName || "Employee form",
+                        sub.correctionNote ? `“${sub.correctionNote}”` : null,
+                      ].filter(Boolean).join(" · ")}
+                      stamp={<Stamp tone="warning">Fix</Stamp>}
+                      accentEdge
+                      onClick={() => onStartTask("resubmit", sub)}
+                    />
+                  );
+                })}
+              </div>
             </div>
-            <div className="card" style={{ padding: "4px 16px", borderLeft: "3px solid var(--amber)" }}>
-              {corrections.map((sub: any) => {
-                const schema = getSchema(sub.schemaKey);
-                return (
-                  <button className="task" key={sub.id} onClick={() => onStartTask("resubmit", sub)}>
-                    <span className="ci" style={{ background: "var(--amber-light)", color: "var(--amber)" }}>
-                      <Icon n="alert" s={16} />
-                    </span>
-                    <span className="tinfo">
-                      <span className="who">{sub.clientName || "Employee form"}</span>
-                      <span className="what">{schema?.name || sub.schemaKey}</span>
-                      {sub.correctionNote && (
-                        <span className="what" style={{ color: "var(--amber)", fontSize: 11 }}>
-                          "{sub.correctionNote}"
-                        </span>
-                      )}
-                    </span>
-                    <span className="due">Fix & resubmit</span>
-                  </button>
-                );
-              })}
+          )}
+
+          {dueTasks.length > 0 && (
+            <div>
+              <MonoLabel rule count={dueTasks.length} style={{ marginBottom: 12 }}>Due today</MonoLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {dueTasks.map((task: any) => {
+                  const late = isLate(task.dueDate);
+                  return (
+                    <RecordRow
+                      key={task.id}
+                      icon={<Icon name={late ? "alert" : "clock"} size={17} />}
+                      title={task.title}
+                      subtitle={[task.clientName || "All caregivers", task.recurrence].filter(Boolean).join(" · ")}
+                      stamp={<Stamp tone={late ? "error" : "brand"}>{late ? "Late" : "Today"}</Stamp>}
+                      accentEdge={late}
+                      onClick={() => onStartTask("task", task)}
+                    />
+                  );
+                })}
+              </div>
             </div>
-          </>
-        )}
+          )}
 
-        {/* Real due tasks */}
-        {dueTasks.length > 0 && (
-          <>
-            <div className="section-label">Due today</div>
-            <div className="card" style={{ padding: "4px 16px" }}>
-              {dueTasks.map((task: any) => {
-                const late = isLate(task.dueDate);
-                const client = task.clientId ? clients.find((c: any) => c.id === task.clientId) : null;
-                return (
-                  <button className="task" key={task.id} onClick={() => onStartTask("task", task)}>
-                    <span className="ci">
-                      {client ? client.initials : <Icon n="shield" s={16} />}
-                    </span>
-                    <span className="tinfo">
-                      <span className="who">{task.clientName || "All caregivers"}</span>
-                      <span className="what">{task.title}</span>
-                      {task.recurrence && (
-                        <span className="chip" style={{ marginTop: 2, fontSize: 10 }}>{task.recurrence}</span>
-                      )}
-                    </span>
-                    <span className={`due${late ? "" : " ok"}`} style={{ color: priorityColor(task.priority) }}>
-                      {late ? "Late" : "Today"}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
+          {totalDue === 0 && (
+            <EmptyState
+              title="All caught up"
+              description="Nothing is due today. Anything assigned to you will appear here."
+            />
+          )}
 
-        {totalDue === 0 && (
-          <div className="card" style={{ padding: 24, textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
-            <strong>All caught up!</strong>
-            <p style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4 }}>No tasks due today.</p>
-          </div>
-        )}
-
-        {/* Upcoming tasks */}
-        {(() => {
-          const upcoming = tasks.filter((t: any) =>
-            (t.status === "pending") && !isDueToday(t.dueDate) && !isLate(t.dueDate)
-          );
-          if (upcoming.length === 0) return null;
-          return (
-            <>
-              <div className="section-label">Coming up</div>
-              <div className="card" style={{ padding: "4px 16px" }}>
+          {upcoming.length > 0 && (
+            <div>
+              <MonoLabel rule count={upcoming.length} style={{ marginBottom: 12 }}>Coming up</MonoLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {upcoming.slice(0, 4).map((task: any) => (
-                  <button className="task" key={task.id} onClick={() => onStartTask("task", task)}>
-                    <span className="ci" style={{ background: "var(--surface-2)", color: "var(--ink-3)" }}>
-                      <Icon n="clock" s={16} />
-                    </span>
-                    <span className="tinfo">
-                      <span className="who">{task.clientName || "All caregivers"}</span>
-                      <span className="what">{task.title}</span>
-                    </span>
-                    <span className="due ok">{fmtDate(task.dueDate)}</span>
-                  </button>
+                  <RecordRow
+                    key={task.id}
+                    icon={<Icon name="calendar" size={17} />}
+                    title={task.title}
+                    subtitle={task.clientName || "All caregivers"}
+                    meta={fmtDate(task.dueDate)}
+                    onClick={() => onStartTask("task", task)}
+                  />
                 ))}
               </div>
-            </>
-          );
-        })()}
+            </div>
+          )}
+        </section>
 
-        <div className="section-label">Start a form</div>
-        {Store.publishedKeysFor("caregiver").length === 0 ? (
-          <div className="card" style={{ padding: 16, textAlign: "center", color: "var(--ink-3)", fontSize: 13 }}>
-            No forms published yet.
-          </div>
-        ) : (
-          Store.publishedKeysFor("caregiver").map((key: string) => (
-            <FormCard key={key} schemaKey={key} onStart={() => onStartTask("schema", { schemaKey: key })} />
-          ))
-        )}
+        <aside>
+          <MonoLabel rule count={published.length} style={{ marginBottom: 12 }}>Start a form</MonoLabel>
+          {published.length === 0 ? (
+            <Text role="body" color="quiet" style={{ fontSize: 13.5 }}>
+              No forms have been published for you yet.
+            </Text>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {published.map((key: string) => (
+                <FormRow key={key} schemaKey={key} onStart={() => onStartTask("schema", { schemaKey: key })} />
+              ))}
+            </div>
+          )}
+        </aside>
       </div>
-    </div>
+    </>
   );
 }
 
-// ── Forms Tab ──────────────────────────────────────────────────────────────
+// ── Forms ──────────────────────────────────────────────────────────────────
 
 function FormsTab({ onStart }: any) {
   const published = Store.publishedKeysFor("caregiver");
   return (
-    <div className="view">
-      <div className="appbar">
-        <div className="title-row"><h2>Forms</h2></div>
-        <div className="datestrip">
-          <span className="dot" />{published.length} published templates available
+    <>
+      <SheetHeader
+        eyebrow="Caregiver / Forms"
+        title="Available forms"
+        lead="Everything published for your role. Each one saves as you go, so you can stop and come back."
+      />
+      {published.length === 0 ? (
+        <EmptyState
+          title="No forms yet"
+          description="Nothing has been published for caregivers. Your office manager publishes forms from the templates library."
+        />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 820 }}>
+          {published.map((key: string) => (
+            <FormRow key={key} schemaKey={key} onStart={() => onStart(key, null)} />
+          ))}
         </div>
-      </div>
-      <div className="pad" style={{ paddingTop: 4 }}>
-        {published.length === 0 ? (
-          <div className="card" style={{ padding: 24, textAlign: "center" }}>
-            <p style={{ color: "var(--ink-3)", fontSize: 13 }}>No forms have been published for you yet.</p>
-          </div>
-        ) : (
-          published.map((key: string) => (
-            <FormCard key={key} schemaKey={key} onStart={() => onStart(key, null)} />
-          ))
-        )}
-        <p style={{ fontSize: 11.5, color: "var(--ink-3)", textAlign: "center", marginTop: 22, lineHeight: 1.5 }}>
-          Published by Admin from imported PDFs.<br />
-          Caregivers only see templates meant for their role.
-        </p>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
-// ── Records Tab ────────────────────────────────────────────────────────────
+// ── Records ────────────────────────────────────────────────────────────────
 
 function RecordsTab({ submissions, onOpen }: any) {
   const [search, setSearch] = useState("");
@@ -259,173 +242,169 @@ function RecordsTab({ submissions, onOpen }: any) {
   const totalCount = queued.length + submissions.length;
 
   return (
-    <div className="view">
-      <div className="appbar">
-        <div className="title-row"><h2>My records</h2></div>
-        <div className="datestrip"><span className="dot" />{totalCount} total</div>
-      </div>
-      <div className="pad" style={{ paddingTop: 4 }}>
-        {/* Search + filter bar */}
-        {totalCount > 0 && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <div style={{ position: "relative", flex: 1 }}>
-              <Icon n="search" s={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }} />
-              <input
-                className="rec-search"
-                placeholder="Search forms or clients…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{ paddingLeft: 32 }}
-              />
-            </div>
-            <select className="rec-filter" value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">All</option>
-              <option value="corrections">Corrections</option>
-              <option value="reviewed">Reviewed</option>
-              <option value="filed">Filed</option>
-            </select>
-          </div>
-        )}
+    <>
+      <SheetHeader
+        eyebrow="Caregiver / Records"
+        title="My records"
+        lead="Every form you have filed, with the signed document it produced."
+      />
 
-        {/* Offline queued items */}
-        {queued.length > 0 && (
-          <>
-            <div className="section-label" style={{ color: "var(--warn)" }}>
-              <Icon n="wifi" s={13} style={{ marginRight: 5, verticalAlign: "-1px" }} />
-              Pending upload ({queued.length})
-            </div>
-            <div className="card" style={{ padding: "4px 16px", borderLeft: "3px solid var(--warn)", marginBottom: 8 }}>
-              {queued.map((item: any) => {
-                const schema = getSchema(item.schemaKey);
-                return (
-                  <div className="subrow" key={item.id} style={{ opacity: 0.82 }}>
-                    <span className="si" style={{ color: "var(--warn)" }}>
-                      <Icon n={schema?.icon || "file"} s={18} />
-                    </span>
-                    <span className="sinfo">
-                      <span className="nm">{schema?.name || item.schemaKey}</span>
-                      <span className="meta">
-                        {item.clientName ? `${item.clientName} · ` : ""}
-                        Queued {fmtDate(item.queuedAt?.slice(0, 10))}
-                      </span>
-                    </span>
-                    <span className="stat" style={{ color: "var(--warn)", background: "rgba(215,146,59,0.1)" }}>Pending</span>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+      {totalCount > 0 && (
+        <div style={{ display: "flex", gap: 12, margin: "0 0 26px", flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ width: 300 }}>
+            <Input
+              placeholder="Search forms or clients"
+              value={search}
+              onChange={(e: any) => setSearch(e.target.value)}
+              iconLeft={<Icon name="search" size={17} />}
+            />
+          </div>
+          <div style={{ width: 190 }}>
+            <Select
+              value={filter}
+              onChange={(e: any) => setFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All records" },
+                { value: "corrections", label: "Needs correction" },
+                { value: "reviewed", label: "Reviewed" },
+                { value: "filed", label: "Filed" },
+              ]}
+            />
+          </div>
+          <span style={{ flex: 1 }} />
+          <MonoLabel count={totalCount}>Total</MonoLabel>
+        </div>
+      )}
 
-        {submissions.length === 0 && queued.length === 0 ? (
-          <div className="empty">
-            <div className="ei"><Icon n="inbox" s={24} /></div>
-            <h4>No records yet</h4>
-            <p>Forms you complete and submit will appear here, each with its signed PDF.</p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="card" style={{ padding: 20, textAlign: "center", color: "var(--ink-3)", fontSize: 13 }}>
-            No records match your search.
-          </div>
-        ) : (
-          <div className="card" style={{ padding: "4px 16px" }}>
-            {filtered.map((sub: any) => {
-              const schema = getSchema(sub.schemaKey);
-              const needsCorrection = sub.status === "needsCorrection";
+      {/* Work done with no signal. It is on this device and nowhere else yet,
+          which is worth saying plainly rather than showing as ordinary. */}
+      {queued.length > 0 && (
+        <div style={{ marginBottom: 30 }}>
+          <MonoLabel rule count={queued.length} style={{ marginBottom: 12 }}>Waiting to upload</MonoLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {queued.map((item: any) => {
+              const schema = getSchema(item.schemaKey);
               return (
-                <button className="subrow" key={sub.id} onClick={() => onOpen(sub)}>
-                  <span className="si" style={{ color: needsCorrection ? "var(--amber)" : undefined }}>
-                    <Icon n={schema ? schema.icon : "file"} s={18} />
-                  </span>
-                  <span className="sinfo">
-                    <span className="nm">{schema ? schema.name : sub.schemaKey}</span>
-                    <span className="meta">
-                      {sub.clientName ? `${sub.clientName} · ` : ""}
-                      {sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}
-                    </span>
-                    {needsCorrection && sub.correctionNote && (
-                      <span className="meta" style={{ color: "var(--amber)", fontSize: 11 }}>
-                        "{sub.correctionNote}"
-                      </span>
-                    )}
-                  </span>
-                  <span className={`stat${needsCorrection ? " warn" : sub.status === "reviewed" ? " ok" : ""}`}>
-                    {needsCorrection ? "Correction" : sub.status === "reviewed" ? "Reviewed" : "Filed"}
-                  </span>
-                </button>
+                <RecordRow
+                  key={item.id}
+                  icon={<Icon name="wifi" size={17} />}
+                  title={schema?.name || item.schemaKey}
+                  subtitle={[item.clientName, `queued ${fmtDate(item.queuedAt?.slice(0, 10))}`].filter(Boolean).join(" · ")}
+                  stamp={<Stamp tone="warning">Pending</Stamp>}
+                  accentEdge
+                />
               );
             })}
           </div>
-        )}
-      </div>
-    </div>
+          <Text role="body" color="quiet" style={{ fontSize: 12.5, marginTop: 10, display: "block" }}>
+            These send on their own once you have a connection.
+          </Text>
+        </div>
+      )}
+
+      {submissions.length === 0 && queued.length === 0 ? (
+        <EmptyState
+          title="No records yet"
+          description="Forms you complete will appear here, each with its signed PDF."
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState title="Nothing matches that" description="Try a different search, or clear the filter." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 880 }}>
+          {filtered.map((sub: any) => {
+            const schema = getSchema(sub.schemaKey);
+            const needsCorrection = sub.status === "needsCorrection";
+            return (
+              <RecordRow
+                key={sub.id}
+                icon={<Icon name={needsCorrection ? "alert" : "file"} size={17} />}
+                title={schema ? schema.name : sub.schemaKey}
+                subtitle={[
+                  sub.clientName,
+                  needsCorrection && sub.correctionNote ? `“${sub.correctionNote}”` : null,
+                ].filter(Boolean).join(" · ")}
+                meta={sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}
+                stamp={
+                  <Stamp tone={needsCorrection ? "warning" : sub.status === "reviewed" ? "success" : "neutral"}>
+                    {needsCorrection ? "Correction" : sub.status === "reviewed" ? "Reviewed" : "Filed"}
+                  </Stamp>
+                }
+                accentEdge={needsCorrection}
+                onClick={() => onOpen(sub)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
-// ── Clients Tab ────────────────────────────────────────────────────────────
+// ── Clients ────────────────────────────────────────────────────────────────
 
 function ClientsTab() {
+  const clients = Store.clients;
   return (
-    <div className="view">
-      <div className="appbar">
-        <div className="title-row"><h2>My clients</h2></div>
-        <div className="datestrip"><span className="dot" />{Store.clients.length} assigned clients</div>
-      </div>
-      <div className="pad" style={{ paddingTop: 4 }}>
-        {Store.clients.length === 0 ? (
-          <div className="card" style={{ padding: 24, textAlign: "center" }}>
-            <p style={{ color: "var(--ink-3)", fontSize: 13 }}>No clients have been assigned to you yet.</p>
-          </div>
-        ) : (
-          Store.clients.map((client: any) => (
-            <div className="card" key={client.id} style={{ marginTop: 10 }}>
-              <div className="clientcard">
-                <span className="ci">{client.initials}</span>
-                <span className="cinfo">
-                  <span className="nm">{client.name}</span>
-                  <span className="meta">DOB {fmtDate(client.dob)} · MRN {client.mrn}</span>
-                  <span className="meta">{client.physician} · {client.phone}</span>
-                  {client.allergies && (
-                    <span className="meta" style={{ color: "var(--amber)" }}>
-                      ⚠ Allergies: {client.allergies}
-                    </span>
-                  )}
-                  {client.notes && (
-                    <span className="meta" style={{ color: "var(--ink-3)", fontSize: 11 }}>{client.notes}</span>
-                  )}
-                </span>
+    <>
+      <SheetHeader
+        eyebrow="Caregiver / Clients"
+        title="My clients"
+        lead="The people assigned to you, with the details you need before a visit."
+      />
+      {clients.length === 0 ? (
+        <EmptyState
+          title="No clients assigned"
+          description="Your office manager assigns clients to you. They'll appear here."
+        />
+      ) : (
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+          gap: 14, maxWidth: 940,
+        }}>
+          {clients.map((client: any) => (
+            <Panel key={client.id} padding={20}>
+              <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 14 }}>
+                <span style={{
+                  display: "grid", placeItems: "center", width: 40, height: 40, flex: "0 0 auto",
+                  borderRadius: "var(--radius-pill)", background: "var(--surface-accent)",
+                  color: "var(--brand-accent)", fontFamily: "var(--font-label)",
+                  fontSize: 13, fontWeight: 600,
+                }}>{client.initials}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15.5, fontWeight: 600, color: "var(--text-body)" }}>{client.name}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--text-quiet)", marginTop: 2 }}>
+                    DOB {fmtDate(client.dob)} · MRN {client.mrn}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
+
+              {/* Allergies lead because they are the thing that changes what a
+                  caregiver does in the next hour. */}
+              {client.allergies && (
+                <div style={{ marginBottom: 12 }}>
+                  <Chip icon={<Icon name="alert" size={13} />}>Allergies: {client.allergies}</Chip>
+                </div>
+              )}
+
+              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                {client.physician && <div>{client.physician}</div>}
+                {client.phone && <div>{client.phone}</div>}
+              </div>
+
+              {client.notes && (
+                <Text role="body" color="quiet" style={{ fontSize: 12.5, lineHeight: 1.6, marginTop: 12, display: "block" }}>
+                  {client.notes}
+                </Text>
+              )}
+            </Panel>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
-// ── Done Screen ────────────────────────────────────────────────────────────
-
-function DoneScreen({ schema, client, onClose, onViewRecords }: any) {
-  return (
-    <div className="done">
-      <div className="badge-ok"><Icon n="check" s={38} sw={2.6} /></div>
-      <h3>Form submitted</h3>
-      <p>
-        {schema.name}{client ? ` for ${client.name}` : ""} has been filed with its signed PDF.
-      </p>
-      <div className="filed">
-        <Icon n="lock" s={12} style={{ verticalAlign: "-2px", marginRight: 5 }} />
-        Audit event recorded · PDF generated
-      </div>
-      <div className="acts">
-        <button className="btn btn-primary btn-block" onClick={onViewRecords}>View my records</button>
-        <button className="btn btn-ghost btn-block" onClick={onClose} style={{ flex: 1 }}>Back to today</button>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Dashboard ─────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────
 
 export function CaregiverDashboard({ page = "today", onNav }: { page: string; onNav: (p: string) => void }) {
   const [wizard, setWizard] = useState<any>(null);
@@ -516,7 +495,7 @@ export function CaregiverDashboard({ page = "today", onNav }: { page: string; on
   };
 
   return (
-    <div className="screen caregiver-screen">
+    <>
       {page === "today" && <TodayTab onStart={startForm} onStartTask={handleStartTask} submissions={submissions} tasks={tasks} />}
       {page === "forms" && <FormsTab onStart={startForm} />}
       {page === "records" && <RecordsTab submissions={submissions} onOpen={(sub: any) => setViewing(sub)} />}
@@ -537,14 +516,28 @@ export function CaregiverDashboard({ page = "today", onNav }: { page: string; on
         />
       ) : null}
 
-      {done ? (
-        <DoneScreen
-          schema={done.schema}
-          client={done.client}
-          onClose={() => { setDone(null); if (onNav) onNav("today"); }}
-          onViewRecords={() => { setDone(null); if (onNav) onNav("records"); }}
-        />
-      ) : null}
+      <Dialog
+        open={!!done}
+        title="Form submitted"
+        description={done ? `${done.schema.name}${done.client ? ` for ${done.client.name}` : ""} has been filed with its signed PDF.` : ""}
+        icon={<Icon name="checkCircle" size={20} />}
+        onClose={() => { setDone(null); if (onNav) onNav("today"); }}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => { setDone(null); if (onNav) onNav("today"); }}>
+              Back to today
+            </Button>
+            <Button onClick={() => { setDone(null); if (onNav) onNav("records"); }}>
+              View my records
+            </Button>
+          </>
+        }
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-quiet)" }}>
+          <Icon name="lock" size={14} />
+          <span>Audit event recorded · PDF generated</span>
+        </div>
+      </Dialog>
 
       {viewing ? (
         <RecordViewer
@@ -553,6 +546,6 @@ export function CaregiverDashboard({ page = "today", onNav }: { page: string; on
           onResubmit={viewing.status === "needsCorrection" ? openCorrectionView : undefined}
         />
       ) : null}
-    </div>
+    </>
   );
 }

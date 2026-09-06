@@ -1,9 +1,20 @@
+// Staff sign-in, rebuilt on the design system's OfficeSignIn composition.
+//
+// Centred, light, one narrow column on paper with the leaf behind it —
+// deliberately not the training portal's dark split plate, so the two doors
+// into the product never read as the same screen.
+//
+// The kit's version was a demo with a four-digit access code. The real flows
+// are unchanged: email + password through Supabase Auth, or SMS one-time code.
+
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth, type Role } from "./AuthContext";
 import { supabase } from "../config/supabase";
 // @ts-ignore - JS module without types
 import { fromRow } from "../lib/records.js";
+// @ts-ignore - JSX modules without types
+import { Icon, Logo, Button, Input, Panel, MonoLabel, Rule, Banner } from "../design/index.js";
 
 const homeByRole: Record<Role, string> = {
   admin: "/admin",
@@ -13,57 +24,54 @@ const homeByRole: Record<Role, string> = {
   client: "/client",
 };
 
+/** Morning / afternoon / evening — the brand speaks like a colleague. */
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
-  
-  const [loginMethod, setLoginMethod] = useState<"email" | "phone">("email");
-  
-  // Email Auth State
+
+  const [method, setMethod] = useState<"email" | "phone">("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  
-  // Phone Auth State
   const [phone, setPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  // Supabase's OTP flow is stateless between the two steps — the code is
-  // verified against the phone number rather than against a handle returned by
-  // the send call — so this tracks only whether a code is outstanding.
   const [codeSent, setCodeSent] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(location.state?.message || null);
+  const [message, setMessage] = useState<string | null>((location.state as any)?.message || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    // Deliberately readable signed-out: this decides whether to send a brand
-    // new install to first-run setup, before anyone can be logged in.
+    // Readable signed-out by design: this decides whether a brand new install
+    // should go to first-run setup, before anyone can possibly be logged in.
     supabase
       .from("app_metadata")
       .select("id")
       .eq("id", "setup")
       .maybeSingle()
       .then(({ data }) => {
-        if (!data) navigate('/setup');
+        if (!data) navigate("/setup");
       });
-    // No reCAPTCHA setup: that was a Firebase phone-auth requirement.
-    // Supabase rate-limits OTP sends server-side instead.
   }, [navigate]);
+
+  const goHome = (userData: any) => {
+    if (userData.mustChangePassword) navigate("/change-password", { replace: true });
+    else navigate(homeByRole[userData.role as Role] || "/", { replace: true });
+  };
 
   const submitEmail = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSubmitting(true);
     setError(null);
     setMessage(null);
-
     try {
-      const user = await login(email, password);
-      if (user.mustChangePassword) {
-        navigate('/change-password', { replace: true });
-      } else {
-        navigate(homeByRole[user.role], { replace: true });
-      }
+      goHome(await login(email, password));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.");
     } finally {
@@ -71,17 +79,18 @@ export default function LoginPage() {
     }
   };
 
+  const normalisedPhone = () => (phone.startsWith("+") ? phone : "+1" + phone.replace(/\D/g, ""));
+
   const sendPhoneCode = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSubmitting(true);
     setError(null);
     try {
-      const formattedPhone = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`;
-      const { error: otpError } = await supabase.auth.signInWithOtp({ phone: formattedPhone });
+      const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalisedPhone() });
       if (otpError) throw new Error(otpError.message);
       setCodeSent(true);
     } catch (err: any) {
-      setError(err.message || "Failed to send verification code.");
+      setError(err.message || "We couldn't send that code. Try again in a moment.");
     } finally {
       setIsSubmitting(false);
     }
@@ -92,169 +101,160 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const formattedPhone = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`;
       const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        phone: formattedPhone,
+        phone: normalisedPhone(),
         token: verificationCode,
-        type: 'sms',
+        type: "sms",
       });
       if (verifyError) throw new Error(verifyError.message);
 
-      const { data: row } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", data.user!.id)
-        .maybeSingle();
-
+      const { data: row } = await supabase.from("users").select("*").eq("id", data.user!.id).maybeSingle();
       if (row) {
-        const userData = fromRow("users", row);
-        if (userData.mustChangePassword) {
-          navigate('/change-password', { replace: true });
-        } else {
-          navigate(homeByRole[userData.role as Role], { replace: true });
-        }
+        goHome(fromRow("users", row));
       } else {
         // A verified phone with no profile cannot be placed in the app; don't
         // leave them half-authenticated on the login screen.
         await supabase.auth.signOut();
-        setError("User profile not found in database.");
+        setError("We don't have a profile for that number yet.");
       }
     } catch (err: any) {
-      setError(err.message || "Invalid verification code.");
+      setError(err.message || "That code didn't work. Check it and try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const emailReady = email.includes("@") && password.length > 0;
+
   return (
-    <div className="login-page">
-      <div className="login-stage" style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <section className="login-intro" style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div className="login-brand-row" style={{ justifyContent: 'center' }}>
-            <img src="/logo.png" alt="Dare to Care" className="login-logo-mark" />
-            <div style={{ textAlign: 'left' }}>
-              <strong>Dare to Care</strong>
-              <span>Forms Platform</span>
+    <div className="dtc-auth-page">
+      <img className="dtc-auth-mark" src="/brand/assets/mark-leaf.png" alt="" />
+
+      <form
+        className="dtc-auth-col"
+        onSubmit={method === "email" ? submitEmail : codeSent ? verifyPhoneCode : sendPhoneCode}
+      >
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <Logo width={214} basePath="/brand" />
+        </div>
+
+        <div style={{ marginTop: 28, textAlign: "center" }}>
+          <MonoLabel style={{ justifyContent: "center" }}>Staff sign in</MonoLabel>
+          <h1 style={{
+            margin: "11px 0 0", fontFamily: "var(--font-display)", fontWeight: 500,
+            fontSize: 31, lineHeight: 1.18, letterSpacing: "-0.022em", color: "var(--brand-accent)",
+          }}>{greeting()}</h1>
+        </div>
+
+        {message && (
+          <div style={{ marginTop: 18 }}>
+            <Banner tone="success">{message}</Banner>
+          </div>
+        )}
+
+        {/* One framed sheet, hairline only — this screen never needs a shadow. */}
+        <Panel padding={24} style={{ marginTop: 22 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 17 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["email", "phone"] as const).map((m) => (
+                <Button
+                  key={m}
+                  type="button"
+                  variant={method === m ? "secondary" : "ghost"}
+                  size="sm"
+                  fullWidth
+                  onClick={() => { setMethod(m); setError(null); setCodeSent(false); }}
+                >
+                  {m === "email" ? "Email" : "Phone"}
+                </Button>
+              ))}
             </div>
-          </div>
-        </section>
 
-        <section className="login-panel" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
-          <div className="login-panel-head">
-            <div>
-              <h2>Sign in</h2>
-              <p>Welcome back. Please sign in to your workspace.</p>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem' }}>
-            <button 
-              type="button"
-              style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', background: loginMethod === 'email' ? 'var(--bg-elevated)' : 'transparent', fontWeight: loginMethod === 'email' ? 600 : 400 }}
-              onClick={() => { setLoginMethod('email'); setCodeSent(false); setError(null); }}
-            >
-              Email
-            </button>
-            <button 
-              type="button"
-              style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', background: loginMethod === 'phone' ? 'var(--bg-elevated)' : 'transparent', fontWeight: loginMethod === 'phone' ? 600 : 400 }}
-              onClick={() => { setLoginMethod('phone'); setError(null); }}
-            >
-              Phone Number
-            </button>
-          </div>
-
-          {message && <div className="login-message" style={{ color: 'green', marginBottom: '1rem', padding: '0.5rem', background: '#e6ffe6', borderRadius: '4px' }}>{message}</div>}
-          {error && <div className="login-error">{error}</div>}
-
-          {loginMethod === "email" ? (
-            <form className="login-form" onSubmit={submitEmail}>
-              <label className="login-field">
-                <span>Email Address</span>
-                <input 
+            {method === "email" ? (
+              <>
+                <Input
+                  label="Work email"
                   type="email"
-                  value={email} 
-                  onChange={(event) => setEmail(event.target.value)} 
-                  autoComplete="email" 
-                  required 
-                />
-              </label>
-
-              <label className="login-field">
-                <span>Password</span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="current-password"
+                  value={email}
+                  onChange={(e: any) => setEmail(e.target.value)}
+                  placeholder="you@daretocarehomecare.com"
+                  autoComplete="email"
+                  iconLeft={<Icon name="users" size={17} />}
                   required
                 />
-              </label>
-
-              <button className="login-submit" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Signing in..." : "Sign in"}
-              </button>
-            </form>
-          ) : (
-            <form className="login-form" onSubmit={codeSent ? verifyPhoneCode : sendPhoneCode}>
-              {!codeSent ? (
-                <>
-                  <label className="login-field">
-                    <span>Phone Number</span>
-                    <input 
-                      type="tel"
-                      placeholder="(555) 123-4567"
-                      value={phone} 
-                      onChange={(event) => setPhone(event.target.value)} 
-                      required 
-                    />
-                  </label>
-                  <button className="login-submit" type="submit" disabled={isSubmitting || !phone}>
-                    {isSubmitting ? "Sending..." : "Send Verification Code"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <label className="login-field">
-                    <span>Verification Code</span>
-                    <input 
-                      type="text"
-                      placeholder="123456"
-                      value={verificationCode} 
-                      onChange={(event) => setVerificationCode(event.target.value)} 
-                      required 
-                    />
-                  </label>
-                  <button className="login-submit" type="submit" disabled={isSubmitting || !verificationCode}>
-                    {isSubmitting ? "Verifying..." : "Sign in"}
-                  </button>
-                  <button type="button" className="dbtn dbtn-ghost" style={{ width: '100%', marginTop: '8px' }} onClick={() => setCodeSent(false)}>
-                    Use a different number
-                  </button>
-                </>
-              )}
-            </form>
-          )}
-          
-          <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--slate-500)' }}>
-            Need access? Contact your administrator.
+                <Input
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={(e: any) => { setPassword(e.target.value); setError(null); }}
+                  error={error || undefined}
+                  autoComplete="current-password"
+                  iconRight={<Icon name="lock" size={17} />}
+                  required
+                />
+                <Button size="lg" fullWidth type="submit" disabled={!emailReady || isSubmitting}
+                  iconRight={<Icon name="chevron" size={18} />}>
+                  {isSubmitting ? "Signing in…" : "Sign in"}
+                </Button>
+              </>
+            ) : !codeSent ? (
+              <>
+                <Input
+                  label="Mobile number"
+                  type="tel"
+                  value={phone}
+                  onChange={(e: any) => { setPhone(e.target.value); setError(null); }}
+                  placeholder="(720) 555-0148"
+                  error={error || undefined}
+                  autoComplete="tel"
+                  required
+                />
+                <Button size="lg" fullWidth type="submit" disabled={!phone || isSubmitting}
+                  iconRight={<Icon name="send" size={17} />}>
+                  {isSubmitting ? "Sending…" : "Text me a code"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Six-digit code"
+                  value={verificationCode}
+                  onChange={(e: any) => { setVerificationCode(e.target.value); setError(null); }}
+                  hint={error ? undefined : "Sent to " + phone}
+                  error={error || undefined}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  required
+                />
+                <Button size="lg" fullWidth type="submit" disabled={!verificationCode || isSubmitting}>
+                  {isSubmitting ? "Checking…" : "Sign in"}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" fullWidth onClick={() => setCodeSent(false)}>
+                  Use a different number
+                </Button>
+              </>
+            )}
           </div>
-        </section>
+        </Panel>
 
-        {/* Off to the side and small on purpose — this is not the door most
-            people should notice, let alone use. Everyone with an account signs
-            in above, including people who also have dev access; this is only
-            a shortcut to the separate gate for that second grant. */}
-        <div style={{ marginTop: '1.25rem', textAlign: 'center' }}>
-          <button
-            type="button"
-            onClick={() => navigate('/dev-login')}
-            style={{ background: 'none', border: 'none', color: 'var(--slate-400)', fontSize: '0.8rem', textDecoration: 'underline', cursor: 'pointer', padding: '4px' }}
-          >
-            Dev login
-          </button>
+        <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 9, justifyContent: "center" }}>
+          <Icon name="lock" size={14} style={{ color: "var(--text-quiet)" }} />
+          <span style={{ fontSize: 13, color: "var(--text-quiet)" }}>
+            Protected health information · your session ends when you sign out
+          </span>
         </div>
-      </div>
+
+        <Rule mark style={{ margin: "20px 0 14px" }} />
+
+        <div style={{ textAlign: "center" }}>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            Need access? Ask your administrator.
+          </span>
+          <div style={{ marginTop: 6 }}>
+            <span style={{ fontSize: 13, color: "var(--text-quiet)" }}>Need a hand — call (720) 842-2153</span>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

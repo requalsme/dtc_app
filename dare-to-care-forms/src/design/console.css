@@ -77,3 +77,33 @@
   }
   .cell-by, .cell-by-head, .cell-at, .cell-at-head { display: none !important; }
 }
+
+/* ── Sign-in / set-password pages ─────────────────────────────────────────── */
+/* From the kit's signin.html. Deliberately the opposite composition to the
+   training portal's dark split plate: centred, light, one narrow column on
+   paper, so the two doors never read as the same screen. */
+
+.dtc-auth-page {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 44px 32px;
+  background: var(--surface-base);
+}
+.dtc-auth-page::before {
+  content: "";
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(760px 420px at 50% -12%, rgba(41, 122, 87, .06), transparent 72%);
+}
+/* The leaf sits mostly below the fold at 4% — present as texture in the paper,
+   never as an image competing with the form. */
+.dtc-auth-mark {
+  position: absolute; left: 50%; bottom: -190px;
+  transform: translateX(-50%);
+  width: 520px; opacity: .04; pointer-events: none;
+}
+.dtc-auth-col { position: relative; width: 100%; max-width: 404px; }
+
+@media (max-width: 560px) { .dtc-auth-page { padding: 36px 20px; } }

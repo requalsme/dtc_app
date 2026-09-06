@@ -6,6 +6,7 @@ import { ConsoleDashboard } from "../console/Dashboard.jsx";
 import { ClientsScreen } from "../console/Clients.jsx";
 import { AuditLog as ConsoleAuditLog } from "../console/Audit.jsx";
 import { UsersScreen } from "../console/Users.jsx";
+import { TemplatesScreen } from "../console/Templates.jsx";
 import { ApplicationsReview } from "../features/office-manager/ApplicationsReview.tsx";
 import { DTCStore as Store } from "./store.js";
 import { fmtDate } from "../utils/format.ts";
@@ -412,7 +413,9 @@ function UploadExtracting({ file, onDone, onCancel }) {
         const schema = await extractSchemaFromPdf(file, (step) => {
           setDoneSteps((prev) => (prev.includes(step) ? prev : [...prev, step]));
         });
-        const template = await Store.importUploadedSchema(schema);
+        // The file goes with the schema now, so the original page can be
+        // shown behind the values that were read off it.
+        const template = await Store.importUploadedSchema(schema, file);
         onDone(template);
       } catch (err) {
         console.error("PDF import failed", err);
@@ -957,7 +960,7 @@ function AdminApp({ page, onNav, onToast }) {
 
   switch (page) {
     case "dashboard": return <ConsoleDashboard basePath="/admin" />;
-    case "templates": return <Templates onEdit={setEditingKey} onNav={onNav} onToast={onToast} />;
+    case "templates": return <TemplatesScreen onToast={onToast} />;
     case "upload": return <Upload onImport={(item) => { setImportLib(item); setExtracting(true); }} onUploadFile={setUploadFile} onToast={onToast} />;
     case "users": return <UsersScreen onToast={onToast} />;
     case "clients": return <ClientsScreen />;

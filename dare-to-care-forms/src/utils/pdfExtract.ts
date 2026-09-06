@@ -113,6 +113,38 @@ function mapAcroField(field: PDFField, used: Set<string>): any | null {
   return null; // push buttons and unrecognized field kinds aren't fillable inputs
 }
 
+/**
+ * Where a field physically sits on its page, as a fraction of the page box.
+ *
+ * Stored as fractions rather than points so the overlay can be drawn at any
+ * render width without carrying the original page dimensions around: a widget
+ * at x 0.42 is 42% across whatever size the page is displayed at.
+ *
+ * PDF's origin is bottom-left and CSS's is top-left, so `top` is flipped here
+ * once, at the point the geometry is read, rather than in every consumer.
+ */
+function widgetRect(field: PDFField, page: any): any | null {
+  try {
+    const widget = (field as any).acroField.getWidgets()[0];
+    if (!widget) return null;
+    const r = widget.getRectangle();
+    const size = page?.Size?.() || null;
+    const pw = size ? size[0] : page?.getWidth?.();
+    const ph = size ? size[1] : page?.getHeight?.();
+    if (!pw || !ph) return null;
+    return {
+      x: r.x / pw,
+      y: (ph - r.y - r.height) / ph, // bottom-left origin -> top-left
+      w: r.width / pw,
+      h: r.height / ph,
+    };
+  } catch {
+    // A field with no widget, or an unreadable rectangle, simply has no
+    // position. The overlay lists those separately rather than guessing.
+    return null;
+  }
+}
+
 function groupFieldsByPage(fields: PDFField[], pages: any[]): any[] {
   const used = new Set<string>();
   const byPage = new Map<number, any[]>();
@@ -120,12 +152,16 @@ function groupFieldsByPage(fields: PDFField[], pages: any[]): any[] {
     const mapped = mapAcroField(field, used);
     if (!mapped) continue;
     let pageIndex = 0;
+    let pageObj: any = pages[0];
     try {
       const widgets = (field as any).acroField.getWidgets();
       const pRef = widgets[0]?.P?.();
       const idx = pages.findIndex((p) => p.ref === pRef);
-      if (idx >= 0) pageIndex = idx;
+      if (idx >= 0) { pageIndex = idx; pageObj = pages[idx]; }
     } catch { /* default to page 0 */ }
+    // Carried so a filled form can be drawn back over its own scan.
+    mapped.rect = widgetRect(field, pageObj);
+    mapped.page = pageIndex;
     if (!byPage.has(pageIndex)) byPage.set(pageIndex, []);
     byPage.get(pageIndex)!.push(mapped);
   }

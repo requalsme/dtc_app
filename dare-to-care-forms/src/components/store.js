@@ -451,17 +451,44 @@ export const DTCStore = {
   // Real, arbitrary-PDF import: unlike importTemplate (which clones one of the
   // fixed reference-library schemas), this accepts a schema built at runtime by
   // src/utils/pdfExtract.ts from whatever PDF the admin actually uploaded.
-  async importUploadedSchema(schema) {
+  // `file` is the PDF the schema was read out of. Keeping it is what makes the
+  // document view possible: extracted values can be drawn back over the page
+  // they came from, and the original stays available for anyone who needs to
+  // see what was actually signed. Previously only the filename survived, so
+  // there was nothing to show.
+  //
+  // Storing it is also newly possible — Cloud Storage was never enabled on the
+  // old Firebase project, so an upload had nowhere to go.
+  async importUploadedSchema(schema, file) {
     const key = state.templates.some((t) => t.key === schema.key)
       ? `${schema.key}_${Date.now().toString(36)}`
       : schema.key;
     const fieldCount = (schema.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
+
+    // Under templates/ in the filed bucket, keyed by the template it belongs
+    // to. A failed upload must not lose the schema that was just extracted, so
+    // this degrades to a template without a source rather than throwing.
+    let sourcePath = null;
+    if (file) {
+      try {
+        sourcePath = await uploadFile(
+          BUCKETS.filed,
+          `templates/${key}/${Date.now()}__source.pdf`,
+          file,
+          "application/pdf",
+        );
+      } catch {
+        sourcePath = null;
+      }
+    }
+
     const template = {
       ...schema,
       key,
       status: "draft",
       version: schema.version || 1,
       fieldCount,
+      sourcePath,
       updatedAt: new Date().toISOString(),
     };
     await put("templates", key, template);

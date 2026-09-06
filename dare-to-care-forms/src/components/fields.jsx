@@ -256,6 +256,22 @@ function FieldRenderer({ field, value, onChange, ctx, invalid }) {
     case "date":
       control = <input type="date" className="input" value={value || ""} onChange={(e) => setVal(e.target.value)} />;
       break;
+    // The importer infers these from the prompt's own wording ("Time In",
+    // "Cell Phone", "Email Address", "Total Hours"). Without real cases here
+    // they fell through to a plain text box, so the type was a claim the form
+    // did not honour — no picker, no keypad on a phone, no validation.
+    case "time":
+      control = <input type="time" className="input" value={value || ""} onChange={(e) => setVal(e.target.value)} />;
+      break;
+    case "tel":
+      control = <input type="tel" className="input" inputMode="tel" autoComplete="tel" value={value || ""} placeholder={field.placeholder || ""} onChange={(e) => setVal(e.target.value)} />;
+      break;
+    case "email":
+      control = <input type="email" className="input" inputMode="email" autoComplete="email" value={value || ""} placeholder={field.placeholder || ""} onChange={(e) => setVal(e.target.value)} />;
+      break;
+    case "number":
+      control = <input type="number" className="input" inputMode="decimal" value={value ?? ""} placeholder={field.placeholder || ""} onChange={(e) => setVal(e.target.value)} />;
+      break;
     case "textarea":
       control = <textarea className="textarea" value={value || ""} placeholder={field.placeholder || ""} onChange={(e) => setVal(e.target.value)} />;
       break;

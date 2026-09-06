@@ -19,6 +19,7 @@ export * from "./components/core/Stamp.jsx";
 export * from "./components/feedback/Banner.jsx";
 export * from "./components/feedback/Dialog.jsx";
 export * from "./components/feedback/EmptyState.jsx";
+export * from "./components/feedback/HelpBot.jsx";
 export * from "./components/feedback/Toast.jsx";
 
 // forms

@@ -11,10 +11,11 @@
 // page is the thing a surveyor will ask to see.
 
 import React from "react";
-import { Icon, Button, Stamp, MonoLabel, Input, Select, Panel, RecordRow, EmptyState, Chip } from "../design/index.js";
+import { Icon, Button, Stamp, MonoLabel, Input, Select, Panel, RecordRow, EmptyState, Chip, HelpBot } from "../design/index.js";
 import { SheetHeader, useAreaLabel } from "./Chrome.jsx";
 import { useStore } from "./useStore.js";
 import { DocumentView } from "./DocumentView.jsx";
+import { HELP } from "./helpTips.js";
 
 const STATUS_STAMP = {
   published: ["success", "Published"],
@@ -29,7 +30,7 @@ const fmtDate = (v) => {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 };
 
-function TemplateDetail({ template, onBack, onPublish, onUnpublish, busy }) {
+function TemplateDetail({ template, onBack, onPublish, onUnpublish, onEdit, busy }) {
   const area = useAreaLabel();
   const stamp = STATUS_STAMP[template.status] || ["neutral", template.status || "Draft"];
   const count = fieldCount(template);
@@ -56,6 +57,11 @@ function TemplateDetail({ template, onBack, onPublish, onUnpublish, busy }) {
             <Button variant="outline" iconLeft={<Icon name="arrowLeft" size={16} />} onClick={onBack}>
               All templates
             </Button>
+            {onEdit && (
+              <Button variant="outline" iconLeft={<Icon name="edit" size={16} />} onClick={() => onEdit(template.key)}>
+                Edit form
+              </Button>
+            )}
             {published ? (
               <Button variant="outline" disabled={busy} onClick={() => onUnpublish(template)}>
                 {busy ? "Working…" : "Unpublish"}
@@ -93,7 +99,7 @@ function TemplateDetail({ template, onBack, onPublish, onUnpublish, busy }) {
   );
 }
 
-export function TemplatesScreen({ onToast }) {
+export function TemplatesScreen({ onToast, onNew, onEdit }) {
   const Store = useStore();
   const area = useAreaLabel();
 
@@ -124,13 +130,17 @@ export function TemplatesScreen({ onToast }) {
 
   if (open) {
     return (
-      <TemplateDetail
-        template={open}
-        onBack={() => setOpenKey(null)}
-        onPublish={doPublish}
-        onUnpublish={doUnpublish}
-        busy={busy}
-      />
+      <>
+        <TemplateDetail
+          template={open}
+          onBack={() => setOpenKey(null)}
+          onPublish={doPublish}
+          onUnpublish={doUnpublish}
+          onEdit={onEdit}
+          busy={busy}
+        />
+        <HelpBot {...HELP.templates} storageKey="templates" />
+      </>
     );
   }
 
@@ -150,6 +160,13 @@ export function TemplatesScreen({ onToast }) {
         eyebrow={area + " / Templates"}
         title="Templates"
         lead="Every form the agency can send out. Open one to read what it asks and, where it came from paper, to see the original page."
+        actions={
+          onNew && (
+            <Button iconLeft={<Icon name="plus" size={16} />} onClick={onNew}>
+              Start a new form
+            </Button>
+          )
+        }
       />
 
       <div style={{ display: "flex", gap: 12, margin: "0 0 26px", flexWrap: "wrap", alignItems: "center" }}>
@@ -180,8 +197,11 @@ export function TemplatesScreen({ onToast }) {
         <EmptyState
           title={all.length === 0 ? "No templates yet" : "Nothing matches that"}
           description={all.length === 0
-            ? "Import a PDF to turn it into a form."
+            ? "Build one from scratch, start from a familiar shape, or read one in from a PDF."
             : "Try a different search, or clear the status filter."}
+          action={all.length === 0 && onNew
+            ? <Button iconLeft={<Icon name="plus" size={16} />} onClick={onNew}>Start a new form</Button>
+            : undefined}
         />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 820 }}>
@@ -206,6 +226,8 @@ export function TemplatesScreen({ onToast }) {
           })}
         </div>
       )}
+
+      <HelpBot {...HELP.templates} storageKey="templates" />
     </>
   );
 }

@@ -497,6 +497,70 @@ export const DTCStore = {
     return template;
   },
 
+  // Author a form in the app rather than importing one.
+  //
+  // Until now the only way a template could come into existence was to import
+  // a PDF or clone one of the fixed reference schemas, which meant any form the
+  // agency had not already printed simply could not be made. This is the other
+  // half of that: a form that starts life in the builder and never had a paper
+  // original. It carries no sourcePath, so the document view correctly shows it
+  // as app-authored instead of hunting for a scan that does not exist.
+  async createTemplate({ name, category, subject, completedBy, sections, description, estMin } = {}) {
+    const clean = (name || "Untitled form").trim() || "Untitled form";
+    const base = clean.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "form";
+    // Time-suffixed so two forms named the same thing cannot collide, which
+    // would silently overwrite the first one.
+    const key = `custom_${base}_${Date.now().toString(36)}`;
+    const template = {
+      key,
+      name: clean,
+      description: description || "",
+      category: category || "Custom",
+      subject: subject || "client",
+      completedBy: completedBy && completedBy.length ? completedBy : ["admin", "officeManager"],
+      sections: sections && sections.length ? sections : [{ id: `s_${Date.now()}`, title: "Details", fields: [] }],
+      status: "draft",
+      version: 1,
+      icon: "file-text",
+      estMin: estMin || 3,
+      fieldCount: (sections || []).reduce((n, s) => n + (s.fields || []).length, 0),
+      createdInApp: true,
+      updatedAt: new Date().toISOString(),
+    };
+    await put("templates", key, template);
+    await logAudit("template_created", clean);
+    await refresh();
+    return template;
+  },
+
+  // Start from a form that already works. Copies the structure but never the
+  // status or the source document: a duplicate is always a fresh draft, and it
+  // must not claim to be backed by the original's scan.
+  async duplicateTemplate(sourceKey, newName) {
+    const source = state.templates.find((t) => t.key === sourceKey);
+    if (!source) throw new Error("That form no longer exists.");
+    const copy = JSON.parse(JSON.stringify(source));
+    delete copy.sourcePath;
+    delete copy.sourceFile;
+    delete copy.sourcePages;
+    return this.createTemplate({
+      name: newName || `${source.name} (copy)`,
+      category: copy.category,
+      subject: copy.subject,
+      completedBy: copy.completedBy,
+      sections: copy.sections,
+      description: copy.description,
+      estMin: copy.estMin,
+    });
+  },
+
+  async deleteTemplate(key) {
+    const name = this.schemaName(key);
+    await remove("templates", key);
+    await logAudit("template_deleted", name);
+    await refresh();
+  },
+
   async saveTemplate(template) {
     const fieldCount = (template.sections || []).reduce((n, s) => n + (s.fields || []).length, 0);
     const toSave = { ...template, fieldCount, updatedAt: new Date().toISOString() };

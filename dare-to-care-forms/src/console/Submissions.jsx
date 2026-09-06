@@ -13,7 +13,7 @@
 
 import React from "react";
 import { Icon, Button, Stamp, MonoLabel, Avatar, Tabs, Input, Select, Panel } from "../design/index.js";
-import { SheetHeader } from "./Chrome.jsx";
+import { SheetHeader, useAreaLabel } from "./Chrome.jsx";
 import { useStore } from "./useStore.js";
 
 const SUB_COLS = "minmax(140px,1.7fr) minmax(90px,1.1fr) minmax(90px,1fr) max-content 156px";
@@ -42,6 +42,7 @@ const WINDOWS = {
 
 export function SubmissionsLedger({ onView }) {
   const Store = useStore();
+  const area = useAreaLabel();
   const [tab, setTab] = React.useState("open");
   const [q, setQ] = React.useState("");
   const [who, setWho] = React.useState("All caregivers");
@@ -83,7 +84,7 @@ export function SubmissionsLedger({ onView }) {
   return (
     <>
       <SheetHeader
-        eyebrow="Office manager / Submissions"
+        eyebrow={area + " / Submissions"}
         title="Submissions"
         lead="Every form a caregiver has sent in, newest first. Open one to read it, mark it reviewed, or send it back for a correction."
       />

@@ -13,7 +13,7 @@
 
 import React from "react";
 import { Icon, Button, Stamp, MonoLabel, Avatar, Tabs, Input, Textarea, Panel, DocumentSlot, RecordRow, Chip, EmptyState } from "../design/index.js";
-import { SheetHeader } from "./Chrome.jsx";
+import { SheetHeader, useAreaLabel } from "./Chrome.jsx";
 import { useStore } from "./useStore.js";
 // The single most useful thing on a client's file: allergies, DNR, emergency
 // contact and the rest, read out of whatever forms have actually been filed
@@ -38,6 +38,7 @@ const fmtDate = (v) => {
 
 function ClientRecord({ client, onBack }) {
   const Store = useStore();
+  const area = useAreaLabel();
   const [tab, setTab] = React.useState("summary");
 
   const submissions = Store.submissionsForSubject("client", client.id);
@@ -63,7 +64,7 @@ function ClientRecord({ client, onBack }) {
   return (
     <>
       <SheetHeader
-        eyebrow={"Clients / " + client.name}
+        eyebrow={area + " / Clients / " + client.name}
         title={client.name}
         lead={lead || "No contact details recorded yet."}
         actions={<Button variant="outline" iconLeft={<Icon name="arrowLeft" size={16} />} onClick={onBack}>All clients</Button>}
@@ -229,6 +230,7 @@ function AddClient({ onAdded }) {
 
 export function ClientsScreen() {
   const Store = useStore();
+  const area = useAreaLabel();
   const [search, setSearch] = React.useState("");
   const [open, setOpen] = React.useState(null);
   const [adding, setAdding] = React.useState(false);
@@ -248,7 +250,7 @@ export function ClientsScreen() {
   return (
     <>
       <SheetHeader
-        eyebrow="Office manager / Clients"
+        eyebrow={area + " / Clients"}
         title="Clients"
         lead="Everyone currently on the roster. Open a file to see every form and document held about that person."
         actions={

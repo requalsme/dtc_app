@@ -13,7 +13,7 @@
 
 import React from "react";
 import { Icon, Button, MonoLabel, Avatar, Input, Select, Chip } from "../design/index.js";
-import { SheetHeader } from "./Chrome.jsx";
+import { SheetHeader, useAreaLabel } from "./Chrome.jsx";
 import { useStore } from "./useStore.js";
 
 const AUDIT_COLS = "44px max-content minmax(120px,1fr) minmax(150px,1.3fr) minmax(180px,2fr)";
@@ -65,6 +65,7 @@ const WINDOWS = { "Any time": Infinity, "Today": 1, "Last 7 days": 7, "Last 30 d
 
 export function AuditLog() {
   const Store = useStore();
+  const area = useAreaLabel();
   const [q, setQ] = React.useState("");
   const [group, setGroup] = React.useState("All activity");
   const [window_, setWindow] = React.useState("Any time");
@@ -99,7 +100,7 @@ export function AuditLog() {
   return (
     <div data-density="dense">
       <SheetHeader
-        eyebrow="Personnel / Audit log"
+        eyebrow={area + " / Audit log"}
         title="Audit log"
         lead="Every action taken in the application, newest first. Entries are numbered, and the database allows no one to edit or delete them."
       />

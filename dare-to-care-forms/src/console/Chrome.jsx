@@ -110,6 +110,24 @@ export function Rail({ groups, user }) {
   );
 }
 
+/**
+ * The section name for a sheet's eyebrow, taken from the route.
+ *
+ * These screens are shared between the administrator and office-manager
+ * consoles, so a hardcoded "Office manager" was appearing above an
+ * administrator's content. Small, but it is the sort of untruth that makes
+ * someone doubt the rest of a page.
+ */
+export function useAreaLabel() {
+  const { pathname } = useLocation();
+  if (pathname.startsWith("/admin")) return "Administrator";
+  if (pathname.startsWith("/office-manager")) return "Office manager";
+  if (pathname.startsWith("/caregiver")) return "Caregiver";
+  if (pathname.startsWith("/new-hire")) return "New hire";
+  if (pathname.startsWith("/client")) return "Client";
+  return "Console";
+}
+
 /** The heading block at the top of every sheet: eyebrow, title, lead, actions. */
 export function SheetHeader({ eyebrow, title, lead, actions }) {
   return (

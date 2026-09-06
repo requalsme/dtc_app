@@ -10,7 +10,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon, Button, Stamp, MonoLabel, Avatar } from "../design/index.js";
-import { SheetHeader } from "./Chrome.jsx";
+import { SheetHeader, useAreaLabel } from "./Chrome.jsx";
 import { useStore } from "./useStore.js";
 
 const COLS = "minmax(120px,1.6fr) minmax(90px,1.1fr) minmax(90px,1fr) max-content 156px";
@@ -70,17 +70,10 @@ function MetricRail({ items }) {
   );
 }
 
-// The eyebrow names the section you are actually in. It previously said
-// "Office manager" on every surface, including the administrator's, which is
-// the sort of small untruth that makes a person distrust the rest of a screen.
-const AREA_LABEL = {
-  "/admin": "Administrator",
-  "/office-manager": "Office manager",
-};
-
 export function ConsoleDashboard({ basePath = "/admin" }) {
   const Store = useStore();
   const navigate = useNavigate();
+  const area = useAreaLabel();
 
   const submissions = Store.getSubmissions().filter((s) => !s.deletedAt);
   const clients = Store.clients;
@@ -114,7 +107,7 @@ export function ConsoleDashboard({ basePath = "/admin" }) {
       <img className="watermark" src="/brand/assets/mark-leaf.png" alt="" />
 
       <SheetHeader
-        eyebrow={(AREA_LABEL[basePath] || "Console") + " / Dashboard"}
+        eyebrow={area + " / Dashboard"}
         title={today}
         lead={lead}
         actions={

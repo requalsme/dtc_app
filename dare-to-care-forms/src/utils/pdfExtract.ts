@@ -14,6 +14,7 @@
 // silently broke name-based matching (every field came back unrecognized and the
 // resulting template had zero fields, even though pdf-lib had parsed them fine).
 
+import { buildLayoutSections } from "./pdfLayout";
 import {
   PDFDocument,
   PDFTextField,
@@ -45,7 +46,7 @@ export type ExtractedSchema = {
   sections: any[];
   sourceFile: string;
   sourcePages: number;
-  extractionMethod: "form-fields" | "text-only";
+  extractionMethod: "form-fields" | "layout" | "text-only";
   extractedFieldCount: number;
 };
 
@@ -189,6 +190,41 @@ async function extractPageText(bytes: Uint8Array): Promise<string[]> {
   return pages;
 }
 
+/**
+ * The same pages, but keeping where each run of text sits.
+ *
+ * This is what makes a flat form usable. pdfjs reports every text run with a
+ * transform; a printed form is a label, a colon, and deliberate empty space,
+ * and that space is the field. Reading the layout beats transcribing it.
+ *
+ * y is flipped to a top-left origin here so everything downstream compares
+ * positions the way the page actually looks.
+ */
+async function extractPageLayout(bytes: Uint8Array): Promise<Array<{ items: any[]; width: number; height: number }>> {
+  const pdfjsLib: any = await import("pdfjs-dist");
+  const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    const items = content.items
+      .filter((it: any) => it.str && it.str.trim())
+      .map((it: any) => ({
+        str: it.str,
+        x: it.transform[4],
+        y: viewport.height - it.transform[5], // bottom-left -> top-left
+        w: it.width,
+        h: it.height || 10,
+      }));
+    pages.push({ items, width: viewport.width, height: viewport.height });
+  }
+  return pages;
+}
+
 function buildTextFallbackSections(pagesText: string[]): any[] {
   const referenceSection = {
     id: "sec_reference",
@@ -220,8 +256,10 @@ export async function extractSchemaFromPdf(
     fields = form.getFields();
   } catch { /* no AcroForm at all */ }
 
-  let sections: any[];
-  let method: "form-fields" | "text-only";
+  // Nullable rather than definitely-assigned: the layout pass may or may not
+  // produce sections, and the plain-text fallback fills in when it does not.
+  let sections: any[] | null = null;
+  let method: "form-fields" | "layout" | "text-only";
   let extractedFieldCount = 0;
 
   if (fields.length > 0) {
@@ -234,8 +272,25 @@ export async function extractSchemaFromPdf(
 
   if (method === "text-only") {
     onProgress?.("extracting-text");
-    const pagesText = await extractPageText(bytes);
-    sections = buildTextFallbackSections(pagesText);
+    // Read the layout first. Eighteen of this agency's nineteen forms are flat,
+    // so this is the path that actually matters, and giving up on it was why
+    // "upload a PDF and get a fillable form" did not work for their documents.
+    try {
+      const layout = await extractPageLayout(bytes);
+      const inferred = buildLayoutSections(layout);
+      if (inferred.fieldCount > 0) {
+        sections = inferred.sections;
+        extractedFieldCount = inferred.fieldCount;
+        method = "layout";
+      }
+    } catch {
+      // Fall through to plain text below rather than failing the import.
+    }
+
+    if (!sections) {
+      const pagesText = await extractPageText(bytes);
+      sections = buildTextFallbackSections(pagesText);
+    }
   }
 
   onProgress?.("building");

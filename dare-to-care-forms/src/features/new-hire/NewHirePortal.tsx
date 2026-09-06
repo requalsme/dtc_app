@@ -28,6 +28,9 @@ import { DTCStore as Store } from "../../components/store";
 import { TRAINING_MODULES } from "../../components/trainingModules";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate } from "../../utils/format";
+// The packet lives in its own module because the office manager's review
+// screen has to count it exactly the same way this one does.
+import { NEW_HIRE_FORM_KEYS, buildRequirements, paperworkComplete } from "./packet";
 import {
   Icon, Button, Stamp, MonoLabel, Panel, RecordRow, DocumentSlot, Chip, Text, Dialog,
   // @ts-ignore - design system is untyped JSX
@@ -35,69 +38,7 @@ import {
 // @ts-ignore - untyped JSX
 import { SheetHeader } from "../../console/Chrome.jsx";
 
-// The New Hire Packet, in the order it is signed. Training is deliberately NOT
-// part of this list: courses are the last thing a caregiver does before being
-// hired on, and they stay locked until the office manager releases them.
-export const NEW_HIRE_FORM_KEYS = [
-  "homemakerJobDescription",
-  "pcwJobDescription",
-  "orientationChecklist",
-  "caregiverAvailability",
-  "rulesOfTheRoad",
-  "employeeHandbookAck",
-  "policiesReceipt",
-  "careScopeAndTasks",
-  "workplaceViolence",
-  "missedVisitsPolicy",
-  "fluVaccineStatement",
-  "emergencyPreparedness",
-];
-
-// Only the job description matching the hire's assigned role has to be signed —
-// the packet says so explicitly — so one of these two counts, not both.
-const EITHER_OR_FORMS = [["homemakerJobDescription", "pcwJobDescription"]];
-
-// Paperwork is complete when every required form is filed, treating each
-// either/or pair as satisfied by one of its members.
-export function paperworkComplete(filedKeys: Set<string>) {
-  const eitherOrMembers = new Set(EITHER_OR_FORMS.flat());
-  const singles = NEW_HIRE_FORM_KEYS.filter((k) => !eitherOrMembers.has(k));
-  const singlesDone = singles.every((k) => filedKeys.has(k));
-  const pairsDone = EITHER_OR_FORMS.every((pair) => pair.some((k) => filedKeys.has(k)));
-  return singlesDone && pairsDone;
-}
-
-type Requirement = { id: string; keys: string[]; either: boolean; done: boolean };
-
-/**
- * The packet as things that must be satisfied, rather than as a list of files.
- *
- * The distinction matters because one requirement — the job description — is
- * met by signing either of two forms. Counting raw keys told a new hire they
- * had "2 forms left" when only one of them was ever going to be asked of them,
- * and the checklist showed both as outstanding forever.
- *
- * Order follows the packet: a pair appears where its first member sits.
- */
-function buildRequirements(filedKeys: Set<string>): Requirement[] {
-  const pairFor = new Map<string, string[]>();
-  for (const pair of EITHER_OR_FORMS) for (const k of pair) pairFor.set(k, pair);
-
-  const seen = new Set<string>();
-  const reqs: Requirement[] = [];
-  for (const key of NEW_HIRE_FORM_KEYS) {
-    if (seen.has(key)) continue;
-    const pair = pairFor.get(key);
-    if (pair) {
-      pair.forEach((k) => seen.add(k));
-      reqs.push({ id: pair.join("|"), keys: pair, either: true, done: pair.some((k) => filedKeys.has(k)) });
-    } else {
-      seen.add(key);
-      reqs.push({ id: key, keys: [key], either: false, done: filedKeys.has(key) });
-    }
-  }
-  return reqs;
-}
+export { NEW_HIRE_FORM_KEYS, paperworkComplete };
 
 type OnboardingStep = {
   id: string;

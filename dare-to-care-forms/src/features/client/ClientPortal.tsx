@@ -1,15 +1,32 @@
+// What a client sees.
+//
+// The narrowest surface in the app, and the one used by the people least
+// likely to want software. A client is elderly more often than not, may be
+// using a tablet somebody else set up, and is here for one of two reasons:
+// to fill something in, or to check that something they already sent arrived.
+// So there are two lists and a phone number, and nothing else.
+//
+// Client forms render directly rather than waiting on an admin to publish
+// them, so the portal is never empty of things to do.
+
 import { useEffect, useState } from "react";
 import { useAuth } from "../../app/AuthContext";
 // @ts-ignore - JS module without types
 import { DTCStore as Store } from "../../components/store";
-// @ts-ignore - JS module without types
-import { Icon } from "../../components/fields";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate } from "../../utils/format";
+import {
+  Icon, Button, Stamp, MonoLabel, Panel, RecordRow, EmptyState, Text, Dialog,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
+// @ts-ignore - untyped JSX
+import { SheetHeader } from "../../console/Chrome.jsx";
 
 // Client-facing forms. These render directly (no admin publish needed) so the
 // portal is always usable. More Admission Packet documents will be added here.
 const CLIENT_FORM_KEYS = ["clientCarePreferences", "clientEmergencyContacts", "clientSatisfaction"];
+
+const OFFICE_PHONE = "(720) 842-2153";
 
 export default function ClientPortal() {
   const { user } = useAuth();
@@ -55,74 +72,98 @@ export default function ClientPortal() {
     }
   };
 
+  const available = CLIENT_FORM_KEYS.map((key) => ({ key, schema: getSchema(key) })).filter((f) => f.schema);
+
   return (
-    <div className="client-portal">
-      {/* Hero */}
-      <div className="client-hero">
-        <div className="client-hero-eyebrow">Client Portal</div>
-        <h1>Hello, {user?.name?.split(" ")[0] || "there"}</h1>
-        <p>Access your forms and documents, or reach out to your care team anytime.</p>
-      </div>
+    <>
+      <SheetHeader
+        eyebrow="Client"
+        title={`Hello, ${user?.name?.split(" ")[0] || "there"}`}
+        lead="Your forms and documents. Fill anything in at your own pace — or call the office and we'll do it with you."
+      />
 
-      {/* Forms */}
-      <div className="newhire-section-title" style={{ marginTop: 0 }}>Your forms</div>
-      <div className="client-forms-grid">
-        {CLIENT_FORM_KEYS.map((key) => {
-          const schema = getSchema(key);
-          if (!schema) return null;
-          return (
-            <button key={key} className="client-form-card" onClick={() => setWizardKey(key)}>
-              <div className="client-form-icon">
-                <Icon n={schema.icon || "file"} s={22} />
+      <div className="split" style={{ alignItems: "start" }}>
+        <section style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+          <div>
+            <MonoLabel rule count={available.length} style={{ marginBottom: 12 }}>Your forms</MonoLabel>
+            {available.length === 0 ? (
+              <EmptyState title="No forms right now" description="There is nothing for you to fill in at the moment." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {available.map(({ key, schema }) => (
+                  <RecordRow
+                    key={key}
+                    icon={<Icon name="file" size={17} />}
+                    title={schema.name}
+                    subtitle={schema.description}
+                    stamp={<Stamp tone="brand">Start</Stamp>}
+                    onClick={() => setWizardKey(key)}
+                  />
+                ))}
               </div>
-              <div style={{ flex: 1, textAlign: "left" }}>
-                <strong>{schema.name}</strong>
-                <span>{schema.description}</span>
-              </div>
-              <Icon n="chevron" s={16} style={{ color: "var(--ink-4)", flexShrink: 0 }} />
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Submitted records */}
-      {submissions.length > 0 && (
-        <>
-          <div className="newhire-section-title">Your submitted forms</div>
-          <div className="card" style={{ padding: "4px 16px" }}>
-            {submissions.map((sub: any) => {
-              const schema = getSchema(sub.schemaKey);
-              return (
-                <button className="subrow" key={sub.id} onClick={() => setViewing(sub)}>
-                  <span className="si"><Icon n={schema?.icon || "file"} s={18} /></span>
-                  <span className="sinfo">
-                    <span className="nm">{schema?.name || sub.schemaKey}</span>
-                    <span className="meta">{sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}</span>
-                  </span>
-                  <span className="stat">Filed</span>
-                </button>
-              );
-            })}
+            )}
           </div>
-        </>
-      )}
 
-      {/* Contact card */}
-      <div className="client-contact-card">
-        <div className="client-contact-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="22" height="22">
-            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.63A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.91a16 16 0 006.18 6.18l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
-          </svg>
-        </div>
-        <div>
-          <strong>Need help?</strong>
-          <span>
-            Contact the DARE to Care office to speak with your care coordinator, update your schedule, or ask any questions about your care plan.
-          </span>
-        </div>
+          <div>
+            <MonoLabel rule count={submissions.length} style={{ marginBottom: 12 }}>What you have sent</MonoLabel>
+            {submissions.length === 0 ? (
+              <Text role="body" color="quiet" style={{ fontSize: 13.5 }}>
+                Nothing yet. Anything you fill in will be listed here so you can check it arrived.
+              </Text>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {submissions.map((sub: any) => {
+                  const schema = getSchema(sub.schemaKey);
+                  return (
+                    <RecordRow
+                      key={sub.id}
+                      icon={<Icon name="checkCircle" size={17} />}
+                      title={schema?.name || sub.schemaKey}
+                      subtitle={sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}
+                      stamp={<Stamp tone="success">Received</Stamp>}
+                      onClick={() => setViewing(sub)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside>
+          {/* A phone number, not a contact form. Someone who cannot work out a
+              screen needs a person, and this is the most likely reason a client
+              opens this page at all. */}
+          <Panel tone="accent" padding={22}>
+            <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+              <span style={{ color: "var(--brand-accent)", flex: "0 0 auto", marginTop: 2 }}>
+                <Icon name="hands" size={22} />
+              </span>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-brand)", marginBottom: 6 }}>
+                  Need a hand?
+                </div>
+                <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+                  Call the office to speak with your care coordinator, change your schedule, or ask
+                  anything about your care plan. We can fill any of these in with you over the phone.
+                </Text>
+                <a
+                  href={`tel:${OFFICE_PHONE.replace(/\D/g, "")}`}
+                  style={{
+                    display: "inline-block", marginTop: 14,
+                    fontFamily: "var(--font-figure)", fontSize: 21,
+                    color: "var(--text-brand)", textDecoration: "none",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {OFFICE_PHONE}
+                </a>
+              </div>
+            </div>
+          </Panel>
+        </aside>
       </div>
 
-      {/* Form wizard */}
       {wizardKey && (
         <FormWizard
           schemaKey={wizardKey}
@@ -134,20 +175,20 @@ export default function ClientPortal() {
         />
       )}
 
-      {/* Done confirmation */}
-      {done && (
-        <div className="done">
-          <div className="badge-ok"><Icon n="check" s={38} sw={2.6} /></div>
-          <h3>Form submitted</h3>
-          <p>{done} has been submitted to your care team.</p>
-          <div className="acts">
-            <button className="btn btn-primary btn-block" onClick={() => setDone(null)}>Done</button>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={!!done}
+        title="Thank you"
+        description={done ? `${done} has been sent to your care team.` : ""}
+        icon={<Icon name="checkCircle" size={20} />}
+        onClose={() => setDone(null)}
+        footer={<Button onClick={() => setDone(null)}>Done</Button>}
+      >
+        <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          There is nothing else you need to do. You can see it any time under “What you have sent”.
+        </Text>
+      </Dialog>
 
-      {/* Record viewer (with Download PDF) */}
       {viewing && <RecordViewer sub={viewing} onClose={() => setViewing(null)} />}
-    </div>
+    </>
   );
 }

@@ -13,15 +13,24 @@
 //   2. Verify and hire on. Once forms and certificates are complete, promoting
 //      the person to caregiver is a deliberate act, recorded against whoever
 //      did it.
+//
+// Both buttons say why they are unavailable rather than simply being dead —
+// an office manager who cannot tell whether a control is broken or merely not
+// yet applicable will go and ask somebody, which is the cost of a silent
+// disabled state.
 
 import { useEffect, useState } from "react";
 // @ts-ignore
-import { Icon } from "../../components/fields.jsx";
-// @ts-ignore
 import { DTCStore as Store } from "../../components/store.js";
 import { FiledDocuments } from "../../components/FiledDocuments";
-import { NEW_HIRE_FORM_KEYS, paperworkComplete } from "../new-hire/NewHirePortal";
+import { packetProgress, paperworkComplete } from "../new-hire/packet";
 import { fmtDate } from "../../utils/format";
+import {
+  Icon, Button, Stamp, MonoLabel, Panel, RecordRow, EmptyState, Chip, Text,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
+// @ts-ignore - untyped JSX
+import { SheetHeader, useAreaLabel } from "../../console/Chrome.jsx";
 
 // Must match window.DTC_COURSES on the course site — this is how a certificate
 // is matched back to the module it proves.
@@ -35,6 +44,7 @@ const REQUIRED_COURSES = [
 ];
 
 export function NewHireReview({ onToast }: { onToast: (m: string) => void }) {
+  const area = useAreaLabel();
   const [, force] = useState(0);
   const [openHire, setOpenHire] = useState<any>(null);
   const [busy, setBusy] = useState("");
@@ -50,10 +60,13 @@ export function NewHireReview({ onToast }: { onToast: (m: string) => void }) {
     );
     const certs = Store.certificatesForUser ? Store.certificatesForUser(hire) : [];
     const passed = new Set(certs.map((c: any) => c.courseId));
+    // Counted in requirements, not files: the packet holds two job descriptions
+    // and asks for one, so counting keys reported 11 of 12 forever.
+    const forms = packetProgress(filed);
     return {
       filed,
-      formsDone: NEW_HIRE_FORM_KEYS.filter((k) => filed.has(k)).length,
-      formsTotal: NEW_HIRE_FORM_KEYS.length,
+      formsDone: forms.done,
+      formsTotal: forms.total,
       paperworkDone: paperworkComplete(filed),
       certs,
       passed,
@@ -96,150 +109,161 @@ export function NewHireReview({ onToast }: { onToast: (m: string) => void }) {
     const hire = newHires.find((h: any) => h.id === openHire.id) || openHire;
     const s = statusOf(hire);
     const ready = s.paperworkDone && s.coursesDone === s.coursesTotal;
+    const working = busy === hire.id;
 
     return (
-      <div>
-        <div className="ds-ph">
-          <div>
-            <button className="btn btn-ghost" style={{ marginBottom: 8 }} onClick={() => setOpenHire(null)}>
-              <Icon n="arrowLeft" s={16} /> All new hires
-            </button>
-            <h1>{hire.name}</h1>
-            <p>
-              Onboarding file — {s.formsDone} of {s.formsTotal} forms ·{" "}
-              {s.coursesDone} of {s.coursesTotal} courses
-              {s.released ? " · training released" : " · training not yet released"}
-            </p>
-          </div>
-          <div className="actions">
-            {!s.released && (
-              <button
-                className="dbtn dbtn-ghost"
-                disabled={!s.paperworkDone || busy === hire.id}
-                title={s.paperworkDone ? "" : "Paperwork must be complete first"}
-                onClick={() => releaseTraining(hire)}
-              >
-                <Icon n="checkCircle" s={15} /> Release training
-              </button>
-            )}
-            <button
-              className="dbtn dbtn-primary"
-              disabled={!ready || busy === hire.id}
-              title={ready ? "" : "All forms and courses must be complete"}
-              onClick={() => hireOn(hire)}
-            >
-              <Icon n="check" s={15} /> Verify &amp; hire on
-            </button>
-          </div>
+      <>
+        <SheetHeader
+          eyebrow={`${area} / New hires / ${hire.name}`}
+          title={hire.name}
+          lead={`${s.formsDone} of ${s.formsTotal} forms signed · ${s.coursesDone} of ${s.coursesTotal} courses passed · training ${s.released ? "released" : "not yet released"}.`}
+          actions={
+            <>
+              <Button variant="outline" iconLeft={<Icon name="arrowLeft" size={16} />} onClick={() => setOpenHire(null)}>
+                All new hires
+              </Button>
+              {!s.released && (
+                <Button
+                  variant="secondary"
+                  disabled={!s.paperworkDone || working}
+                  iconLeft={<Icon name="lock" size={16} />}
+                  onClick={() => releaseTraining(hire)}
+                >
+                  {working ? "Working…" : "Release training"}
+                </Button>
+              )}
+              <Button disabled={!ready || working} iconLeft={<Icon name="check" size={16} />} onClick={() => hireOn(hire)}>
+                {working ? "Working…" : "Verify & hire on"}
+              </Button>
+            </>
+          }
+        />
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 28, flexWrap: "wrap", alignItems: "center" }}>
+          <Stamp tone={s.paperworkDone ? "success" : "neutral"}>
+            {s.paperworkDone ? "Paperwork in" : "Paperwork pending"}
+          </Stamp>
+          <Stamp tone={s.released ? "success" : "neutral"}>
+            {s.released ? "Training released" : "Training locked"}
+          </Stamp>
+          {ready && <Stamp tone="brand">Ready to hire on</Stamp>}
+          {hire.email && <Chip icon={<Icon name="send" size={14} />}>{hire.email}</Chip>}
         </div>
 
-        <div className="ds-panel" style={{ padding: 16, marginBottom: 16 }}>
-          <div className="section-label" style={{ marginBottom: 8 }}>Course certificates</div>
-          {REQUIRED_COURSES.map((c) => {
-            const cert = s.certs.find((x: any) => x.courseId === c.id);
-            return (
-              <div key={c.id} style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--border)", alignItems: "baseline" }}>
-                <span style={{ flex: 1, fontSize: 13 }}>{c.title}</span>
-                {cert ? (
-                  <>
-                    <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                      {cert.score != null ? `Score ${cert.score}` : ""}
-                    </span>
-                    <span className="spill pub" style={{ flex: "none" }}>
-                      {cert.date ? fmtDate(String(cert.date).slice(0, 10)) : "Passed"}
-                    </span>
-                  </>
-                ) : (
-                  <span className="spill draft" style={{ flex: "none" }}>
-                    {s.released ? "Not yet passed" : "Locked"}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-          {!s.released && (
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)", paddingTop: 10 }}>
-              {s.paperworkDone
-                ? "Paperwork is complete — training can be released."
-                : "Training unlocks once the packet is signed and you release it."}
+        {/* Why a control is unavailable, said once and in plain words. */}
+        {!ready && (
+          <Panel tone="sunken" padding={18} style={{ marginBottom: 30, maxWidth: 760 }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <span style={{ color: "var(--text-secondary)", flex: "0 0 auto", marginTop: 1 }}>
+                <Icon name="clock" size={18} />
+              </span>
+              <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.65 }}>
+                {!s.paperworkDone
+                  ? `${hire.name} still has paperwork to sign, so training can't be released yet.`
+                  : !s.released
+                    ? "The packet is signed. Releasing training is your call — it opens the courses on the training site."
+                    : `Training is released. ${hire.name} can be hired on once all ${s.coursesTotal} certificates are back.`}
+              </Text>
             </div>
-          )}
-        </div>
+          </Panel>
+        )}
 
-        <div className="ds-panel" style={{ padding: 16 }}>
-          <div className="section-label" style={{ marginBottom: 8 }}>Signed paperwork</div>
-          <FiledDocuments
-            subjectType="staff"
-            subjectId={hire.id}
-            subjectName={hire.name}
-            emptyHint={`${hire.name} hasn't filed any paperwork yet.`}
-          />
+        <div className="split" style={{ alignItems: "start" }}>
+          <section>
+            <MonoLabel rule style={{ marginBottom: 12 }}>Signed paperwork</MonoLabel>
+            <FiledDocuments
+              subjectType="staff"
+              subjectId={hire.id}
+              subjectName={hire.name}
+              emptyHint={`${hire.name} hasn't filed any paperwork yet.`}
+            />
+          </section>
+
+          <aside>
+            <MonoLabel rule count={`${s.coursesDone}/${s.coursesTotal}`} style={{ marginBottom: 12 }}>
+              Course certificates
+            </MonoLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {REQUIRED_COURSES.map((c) => {
+                const cert = s.certs.find((x: any) => x.courseId === c.id);
+                return (
+                  <RecordRow
+                    key={c.id}
+                    icon={<Icon name={cert ? "award" : s.released ? "clock" : "lock"} size={17} />}
+                    title={c.title}
+                    subtitle={cert && cert.score != null ? `Score ${cert.score}` : ""}
+                    meta={cert && cert.date ? fmtDate(String(cert.date).slice(0, 10)) : ""}
+                    stamp={
+                      cert
+                        ? <Stamp tone="success">Passed</Stamp>
+                        : <Stamp tone="neutral">{s.released ? "Not yet" : "Locked"}</Stamp>
+                    }
+                    accentEdge={!!cert}
+                  />
+                );
+              })}
+            </div>
+          </aside>
         </div>
-      </div>
+      </>
     );
   }
 
   // ── Roster ───────────────────────────────────────────────────────────────
+  const readyCount = newHires.filter((h: any) => {
+    const s = statusOf(h);
+    return s.paperworkDone && s.coursesDone === s.coursesTotal;
+  }).length;
+
   return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <h1>New hires</h1>
-        </div>
-      </div>
+    <>
+      <SheetHeader
+        eyebrow={`${area} / New hires`}
+        title="New hires"
+        lead={
+          newHires.length === 0
+            ? "Nobody is onboarding right now."
+            : `${newHires.length} ${newHires.length === 1 ? "person is" : "people are"} working through onboarding.${
+                readyCount > 0 ? ` ${readyCount} ready to hire on.` : ""
+              }`
+        }
+      />
 
       {newHires.length === 0 ? (
-        <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--ink-3)", fontSize: 13 }}>
-          No one is onboarding right now. Create a new hire from Team to start a packet.
-        </div>
+        <EmptyState
+          title="Nobody is onboarding"
+          description="Create a new hire from the Team screen to start a packet."
+        />
       ) : (
-        <div className="ds-panel">
-          <table className="ds-table">
-            <thead>
-              <tr><th>New hire</th><th>Paperwork</th><th>Courses</th><th>Training</th><th>Ready</th></tr>
-            </thead>
-            <tbody>
-              {newHires.map((h: any) => {
-                const s = statusOf(h);
-                const ready = s.paperworkDone && s.coursesDone === s.coursesTotal;
-                return (
-                  <tr key={h.id} style={{ cursor: "pointer" }} onClick={() => setOpenHire(h)}>
-                    <td>
-                      <span className="row-ic">
-                        <span className="ti">{h.initials}</span>
-                        <span>
-                          <span className="cell-main">{h.name}</span>
-                          <span className="cell-sub">{h.email}</span>
-                        </span>
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`spill${s.paperworkDone ? " pub" : ""}`}>
-                        {s.formsDone}/{s.formsTotal}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`spill${s.coursesDone === s.coursesTotal ? " pub" : ""}`}>
-                        {s.coursesDone}/{s.coursesTotal}
-                      </span>
-                    </td>
-                    <td>
-                      {s.released
-                        ? <span className="spill pub">Released</span>
-                        : <span className="spill">Locked</span>}
-                    </td>
-                    <td>
-                      {ready
-                        ? <span className="spill pub">Ready to hire on</span>
-                        : <span style={{ color: "var(--ink-3)", fontSize: 12 }}>In progress</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 880 }}>
+          {newHires.map((h: any) => {
+            const s = statusOf(h);
+            const ready = s.paperworkDone && s.coursesDone === s.coursesTotal;
+            return (
+              <RecordRow
+                key={h.id}
+                icon={<Icon name="users" size={17} />}
+                title={h.name}
+                subtitle={[
+                  h.email,
+                  `${s.formsDone}/${s.formsTotal} forms`,
+                  `${s.coursesDone}/${s.coursesTotal} courses`,
+                  s.released ? "training released" : "training locked",
+                ].filter(Boolean).join(" · ")}
+                stamp={
+                  ready
+                    ? <Stamp tone="brand">Ready</Stamp>
+                    : s.paperworkDone
+                      ? <Stamp tone="info">In training</Stamp>
+                      : <Stamp tone="neutral">Paperwork</Stamp>
+                }
+                accentEdge={ready}
+                onClick={() => setOpenHire(h)}
+              />
+            );
+          })}
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -1,6 +1,18 @@
+// The office manager's console: submissions, clients, team, and the queues.
+//
+// Most of the screens here are shared with the administrator and live in
+// src/console/. What remains in this file is the work that is specific to
+// reviewing other people's work: reading a submission and deciding whether it
+// stands, sending it back with a reason, starting an office form, and looking
+// at one person's file.
+//
+// Requesting a correction is the one destructive-feeling action on this
+// screen — it reopens finished work for somebody else — so it always carries a
+// written reason, and the reason is required rather than encouraged. A
+// correction with no explanation is just a rejection, and the caregiver has to
+// guess what to change.
+
 import { useEffect, useState } from "react";
-// @ts-ignore
-import { Icon } from "../../components/fields.jsx";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store.js";
 // @ts-ignore
@@ -22,8 +34,16 @@ import { NewHireReview } from "./NewHireReview";
 import { InboundQueue } from "./InboundQueue";
 import { ApplicationsReview } from "./ApplicationsReview";
 import { fmtDate } from "../../utils/format";
+import {
+  Icon, Button, Stamp, MonoLabel, Panel, Select, Input, Textarea,
+  RecordRow, EmptyState, Chip, Text, Dialog, DocumentSlot,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
+// @ts-ignore - untyped JSX
+import { SheetHeader, useAreaLabel } from "../../console/Chrome.jsx";
 
 const relTime = (iso: string) => {
+  if (!iso) return "";
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -31,54 +51,50 @@ const relTime = (iso: string) => {
   return fmtDate(iso.slice(0, 10));
 };
 
-// ── Correction Modal ────────────────────────────────────────────────────────
+// ── Correction ──────────────────────────────────────────────────────────────
 
-function CorrectionModal({ onConfirm, onCancel }: { onConfirm: (note: string) => void; onCancel: () => void }) {
+function CorrectionDialog({ open, onConfirm, onCancel }: { open: boolean; onConfirm: (note: string) => void; onCancel: () => void }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
   const submit = () => {
-    if (!note.trim()) { setError("A correction reason is required."); return; }
+    if (!note.trim()) { setError("Say what needs changing — the caregiver only sees this."); return; }
     onConfirm(note.trim());
   };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="corr-title">
-        <div className="modal-head">
-          <h3 id="corr-title">Request correction</h3>
-          <button className="modal-close" onClick={onCancel} aria-label="Cancel"><Icon n="x" s={16} /></button>
-        </div>
-        <div className="modal-body">
-          <p style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: 12 }}>
-            The caregiver will see this reason and be asked to correct and resubmit the form.
-          </p>
-          <label className="form-label" htmlFor="corr-note">Reason for correction <span style={{ color: "var(--red)" }}>*</span></label>
-          <textarea
-            id="corr-note"
-            className="insp-input"
-            rows={4}
-            placeholder="e.g. Signature date is missing. Please re-sign and resubmit."
-            value={note}
-            onChange={(e) => { setNote(e.target.value); setError(""); }}
-            autoFocus
-          />
-          {error && <div className="form-error">{error}</div>}
-        </div>
-        <div className="modal-foot">
-          <button className="dbtn dbtn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="dbtn dbtn-warn" onClick={submit}>
-            <Icon n="alert" s={14} /> Request correction
-          </button>
-        </div>
-      </div>
-    </div>
+    <Dialog
+      open={open}
+      title="Send this back for correction"
+      description="The caregiver sees this reason and is asked to fix and resubmit."
+      icon={<Icon name="alert" size={20} />}
+      onClose={onCancel}
+      width={520}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button variant="danger" iconLeft={<Icon name="alert" size={16} />} onClick={submit}>
+            Request correction
+          </Button>
+        </>
+      }
+    >
+      <Textarea
+        label="What needs changing"
+        rows={4}
+        placeholder="e.g. Signature date is missing. Please re-sign and resubmit."
+        value={note}
+        onChange={(e: any) => { setNote(e.target.value); setError(""); }}
+        error={error}
+        autoFocus
+      />
+    </Dialog>
   );
 }
 
-// ── Start Form Modal (Office Manager starts office-role forms) ──────────────
+// ── Start an office form ────────────────────────────────────────────────────
 
-function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m: string) => void }) {
+function StartFormDialog({ open, onClose, onToast }: { open: boolean; onClose: () => void; onToast: (m: string) => void }) {
   const [schemaKey, setSchemaKey] = useState("supervisoryVisit");
   const [clientId, setClientId] = useState("");
   const [assignedToId, setAssignedToId] = useState("");
@@ -143,81 +159,82 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sf-title">
-        <div className="modal-head">
-          <h3 id="sf-title">Start office form</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Close"><Icon n="x" s={16} /></button>
-        </div>
-        <div className="modal-body">
-          <div className="form-row">
-            <label className="form-label" htmlFor="sf-schema">Form type</label>
-            <select id="sf-schema" className="ds-select" value={schemaKey} onChange={(e) => setSchemaKey(e.target.value)}>
-              {officeTemplates.length === 0
-                ? <option value="supervisoryVisit">Supervisory Visit</option>
-                : officeTemplates.map((t: any) => <option key={t.key} value={t.key}>{t.name}</option>)
-              }
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label" htmlFor="sf-client">Client (optional)</label>
-            <select id="sf-client" className="ds-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-              <option value="">No client</option>
-              {clients.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label" htmlFor="sf-caregiver">Assign to caregiver (optional)</label>
-            <select id="sf-caregiver" className="ds-select" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
-              <option value="">Me (Office Manager)</option>
-              {caregivers.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label" htmlFor="sf-due">Due date</label>
-            <input id="sf-due" type="date" className="insp-input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </div>
-          <div className="form-row">
-            <label className="form-label" htmlFor="sf-priority">Priority</label>
-            <select id="sf-priority" className="ds-select" value={priority} onChange={(e) => setPriority(e.target.value)}>
-              <option value="urgent">Urgent</option>
-              <option value="normal">Normal</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
-          <div className="form-row">
-            <label className="form-label" htmlFor="sf-recur">Repeat</label>
-            <select id="sf-recur" className="ds-select" value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
-              <option value="">Does not repeat</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Every 90 days</option>
-              <option value="semiannual">Every 6 months</option>
-              <option value="annual">Yearly</option>
-            </select>
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>
-              {recurrence
-                ? "Completing this task automatically schedules the next one."
-                : "Supervisory visits repeat every 90 days; care plans yearly."}
-            </div>
-          </div>
-        </div>
-        <div className="modal-foot">
-          <button className="dbtn dbtn-ghost" onClick={onClose}>Cancel</button>
-          <button className="dbtn dbtn-primary" onClick={createTaskAndOpen}>
-            <Icon n="plus" s={14} /> Start form
-          </button>
-        </div>
+    <Dialog
+      open={open}
+      title="Start an office form"
+      description="Creates the task and opens the form so you can fill it in now."
+      onClose={onClose}
+      width={520}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button iconLeft={<Icon name="plus" size={16} />} onClick={createTaskAndOpen}>Start form</Button>
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Select
+          label="Form"
+          value={schemaKey}
+          onChange={(e: any) => setSchemaKey(e.target.value)}
+          options={
+            officeTemplates.length === 0
+              ? [{ value: "supervisoryVisit", label: "Supervisory Visit" }]
+              : officeTemplates.map((t: any) => ({ value: t.key, label: t.name }))
+          }
+        />
+        <Select
+          label="Client"
+          value={clientId}
+          onChange={(e: any) => setClientId(e.target.value)}
+          hint="Optional. Leave blank for a form that isn't about one person."
+          options={[{ value: "", label: "No client" }, ...clients.map((c: any) => ({ value: c.id, label: c.name }))]}
+        />
+        <Select
+          label="Assign to"
+          value={assignedToId}
+          onChange={(e: any) => setAssignedToId(e.target.value)}
+          options={[
+            { value: "", label: "Me (Office Manager)" },
+            ...caregivers.map((u: any) => ({ value: u.id, label: u.name })),
+          ]}
+        />
+        <Input label="Due" type="date" value={dueDate} onChange={(e: any) => setDueDate(e.target.value)} />
+        <Select
+          label="Priority"
+          value={priority}
+          onChange={(e: any) => setPriority(e.target.value)}
+          options={[
+            { value: "urgent", label: "Urgent" },
+            { value: "normal", label: "Normal" },
+            { value: "low", label: "Low" },
+          ]}
+        />
+        <Select
+          label="Repeat"
+          value={recurrence}
+          onChange={(e: any) => setRecurrence(e.target.value)}
+          hint={recurrence
+            ? "Completing this task schedules the next one automatically."
+            : "Supervisory visits repeat every 90 days; care plans yearly."}
+          options={[
+            { value: "", label: "Does not repeat" },
+            { value: "monthly", label: "Monthly" },
+            { value: "quarterly", label: "Every 90 days" },
+            { value: "semiannual", label: "Every 6 months" },
+            { value: "annual", label: "Yearly" },
+          ]}
+        />
       </div>
-    </div>
+    </Dialog>
   );
 }
 
-
-// ── Submission Detail ───────────────────────────────────────────────────────
+// ── Submission detail ───────────────────────────────────────────────────────
 
 function SubmissionDetail({ submission, onClose, onToast }: { submission: any; onClose: () => void; onToast: (m: string) => void }) {
-  const [correctionModal, setCorrectionModal] = useState(false);
-  const [, force] = useState(0);
+  const area = useAreaLabel();
+  const [correctionOpen, setCorrectionOpen] = useState(false);
   const schema = getSchema(submission.schemaKey);
 
   // Live-refresh the submission
@@ -233,11 +250,10 @@ function SubmissionDetail({ submission, onClose, onToast }: { submission: any; o
     try {
       await Store.requestCorrection(liveSub.id, note);
       onToast("Correction requested — caregiver notified");
-      setCorrectionModal(false);
-      force((v) => v + 1);
+      setCorrectionOpen(false);
     } catch (err: any) {
       onToast(err?.message || "Could not request correction");
-      setCorrectionModal(false);
+      setCorrectionOpen(false);
     }
   };
 
@@ -251,93 +267,104 @@ function SubmissionDetail({ submission, onClose, onToast }: { submission: any; o
     }
   };
 
-  return (
-    <div>
-      {correctionModal && (
-        <CorrectionModal
-          onConfirm={requestCorrection}
-          onCancel={() => setCorrectionModal(false)}
-        />
-      )}
+  const pending = liveSub.status === "submitted";
+  const history = liveSub.correctionHistory || [];
 
-      <div className="ds-ph">
-        <div>
-          <button className="dbtn dbtn-ghost" style={{ marginBottom: 10, padding: "6px 12px", fontSize: 12 }} onClick={onClose}>
-            <Icon n="arrowLeft" s={14} /> All submissions
-          </button>
-          <h1>{schema?.name || liveSub.schemaKey}</h1>
-          <p>
-            {liveSub.clientName || "Employee form"} · submitted by {liveSub.caregiverName} · {relTime(liveSub.submittedAt)}
-            {liveSub.reviewedBy && <span> · Reviewed by {liveSub.reviewedBy}</span>}
-          </p>
-        </div>
-        <div className="actions">
-          {liveSub.status === "submitted" ? (
-            <>
-              <button className="dbtn dbtn-ghost" onClick={() => setCorrectionModal(true)}>
-                <Icon n="alert" s={15} /> Request correction
-              </button>
-              <button className="dbtn dbtn-primary" onClick={markReviewed}>
-                <Icon n="check" s={15} /> Mark reviewed
-              </button>
-            </>
-          ) : liveSub.status === "needsCorrection" ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="spill warn"><span className="pip" />Awaiting caregiver correction</span>
-              {liveSub.correctionNote && (
-                <span style={{ fontSize: 12, color: "var(--amber-dark)" }}>"{liveSub.correctionNote}"</span>
-              )}
-            </div>
-          ) : (
-            <span className="spill pub"><span className="pip" />Reviewed</span>
-          )}
-        </div>
+  return (
+    <>
+      <CorrectionDialog open={correctionOpen} onConfirm={requestCorrection} onCancel={() => setCorrectionOpen(false)} />
+
+      <SheetHeader
+        eyebrow={`${area} / Submissions / ${schema?.name || liveSub.schemaKey}`}
+        title={schema?.name || liveSub.schemaKey}
+        lead={[
+          liveSub.clientName || "Employee form",
+          `submitted by ${liveSub.caregiverName}`,
+          relTime(liveSub.submittedAt),
+          liveSub.reviewedBy ? `reviewed by ${liveSub.reviewedBy}` : null,
+        ].filter(Boolean).join(" · ")}
+        actions={
+          <>
+            <Button variant="outline" iconLeft={<Icon name="arrowLeft" size={16} />} onClick={onClose}>
+              All submissions
+            </Button>
+            {pending && (
+              <>
+                <Button variant="outline" iconLeft={<Icon name="alert" size={16} />} onClick={() => setCorrectionOpen(true)}>
+                  Send back
+                </Button>
+                <Button iconLeft={<Icon name="check" size={16} />} onClick={markReviewed}>
+                  Mark reviewed
+                </Button>
+              </>
+            )}
+          </>
+        }
+      />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 28, flexWrap: "wrap", alignItems: "center" }}>
+        <Stamp tone={pending ? "brand" : liveSub.status === "needsCorrection" ? "warning" : "success"}>
+          {pending ? "Awaiting review" : liveSub.status === "needsCorrection" ? "Sent back" : "Reviewed"}
+        </Stamp>
+        {liveSub.status === "needsCorrection" && liveSub.correctionNote && (
+          <Chip icon={<Icon name="alert" size={14} />}>“{liveSub.correctionNote}”</Chip>
+        )}
+        {liveSub.pdfUrl && (
+          <>
+            <span style={{ flex: 1 }} />
+            <Button size="sm" variant="ghost" iconRight={<Icon name="download" size={15} />}
+              onClick={() => window.open(liveSub.pdfUrl, "_blank", "noopener")}>
+              Download PDF
+            </Button>
+          </>
+        )}
       </div>
 
-      <div style={{ maxWidth: 700 }}>
-        {schema ? <PdfPreview schema={schema} values={liveSub.values} score={liveSub.score || { total: 0, tier: null }} submission={liveSub} /> : null}
+      <div className="split" style={{ alignItems: "start" }}>
+        <section>
+          {schema ? (
+            <PdfPreview schema={schema} values={liveSub.values} score={liveSub.score || { total: 0, tier: null }} submission={liveSub} />
+          ) : (
+            <EmptyState title="Form definition missing" description="The template this was filled from no longer exists." />
+          )}
+        </section>
 
-        {/* Correction history panel */}
-        {liveSub.correctionHistory?.length > 0 && (
-          <div className="admin-panel" style={{ marginTop: 16 }}>
-            <div className="admin-panel-head">
-              <div>
-                <h3>Status history</h3>
-                <p>Full audit trail of every status change on this submission.</p>
-              </div>
-            </div>
-            <div style={{ padding: "0 0 8px" }}>
-              {liveSub.correctionHistory.map((entry: any, i: number) => (
-                <div key={i} className="history-row">
-                  <span className="history-dot" style={{ background: entry.status === "needsCorrection" ? "var(--amber)" : entry.status === "reviewed" ? "var(--accent)" : "var(--ink-4)" }} />
-                  <div className="history-body">
-                    <div className="history-header">
-                      <strong>{entry.actorName}</strong>
-                      <span className="spill ver" style={{ marginLeft: 6 }}>{entry.role}</span>
-                      <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--ink-3)" }}>{relTime(entry.timestamp)}</span>
-                    </div>
-                    <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginTop: 2 }}>
-                      {entry.status === "needsCorrection" ? "Requested correction" : entry.status === "submitted" ? "Resubmitted" : entry.status}
-                    </div>
-                    {entry.note && (
-                      <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 4, fontStyle: "italic" }}>"{entry.note}"</div>
-                    )}
+        <aside>
+          <MonoLabel rule count={history.length} style={{ marginBottom: 12 }}>Status history</MonoLabel>
+          {history.length === 0 ? (
+            <Text role="body" color="quiet" style={{ fontSize: 13.5 }}>
+              Submitted once and not changed since.
+            </Text>
+          ) : (
+            <Panel padding={0}>
+              {history.map((entry: any, i: number) => (
+                <div key={i} style={{
+                  padding: "13px 16px",
+                  borderTop: i ? "1px solid var(--border-hair)" : "none",
+                }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: 13.5, color: "var(--text-body)" }}>{entry.actorName}</strong>
+                    <Stamp tone="neutral" leaf={false}>{entry.role}</Stamp>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: 12, color: "var(--text-quiet)" }}>{relTime(entry.timestamp)}</span>
                   </div>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 4 }}>
+                    {entry.status === "needsCorrection" ? "Sent back for correction"
+                      : entry.status === "submitted" ? "Resubmitted"
+                      : entry.status}
+                  </div>
+                  {entry.note && (
+                    <div style={{ fontSize: 12.5, color: "var(--text-quiet)", marginTop: 5, fontStyle: "italic" }}>
+                      “{entry.note}”
+                    </div>
+                  )}
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {liveSub.pdfUrl ? (
-          <div className="record-actions" style={{ marginTop: 16 }}>
-            <a className="btn btn-ghost btn-block" href={liveSub.pdfUrl} target="_blank" rel="noreferrer">
-              <Icon n="download" s={16} /> Download full PDF document
-            </a>
-          </div>
-        ) : null}
+            </Panel>
+          )}
+        </aside>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -364,54 +391,43 @@ function ChecklistSummary({ subjectType, subjectId, person }: { subjectType: "cl
   }
 
   const pct = counts.required ? Math.round((counts.complete / counts.required) * 100) : 100;
-  const chip = (status: string) => {
-    if (status === "complete") return <span className="spill pub"><span className="pip" />Complete</span>;
-    if (status === "expired") return <span className="spill warn"><span className="pip" />Expired</span>;
-    return <span className="spill correction"><span className="pip" />Missing</span>;
-  };
 
   return (
-    <div className="ds-panel" style={{ padding: 16, marginBottom: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div>
-          <strong>{checklistLabel}</strong>
-          <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>
-            {counts.complete} of {counts.required} required items complete
-            {counts.expired > 0 && ` · ${counts.expired} expired`}
-            {counts.missing > 0 && ` · ${counts.missing} missing`}
-          </div>
-        </div>
-        <div style={{ fontWeight: 700, fontSize: 22, color: pct === 100 ? "var(--accent-deep)" : "var(--ink-2)" }}>{pct}%</div>
-      </div>
+    <Panel label={checklistLabel} labelRight={
+      <span style={{
+        fontFamily: "var(--font-figure)", fontSize: 20, lineHeight: 1,
+        color: pct === 100 ? "var(--status-success)" : "var(--text-brand)",
+        fontVariantNumeric: "tabular-nums",
+      }}>{pct}%</span>
+    }>
+      <Text role="body" color="secondary" style={{ fontSize: 13, display: "block", marginBottom: 16 }}>
+        {counts.complete} of {counts.required} required items complete
+        {counts.expired > 0 && ` · ${counts.expired} expired`}
+        {counts.missing > 0 && ` · ${counts.missing} missing`}
+      </Text>
+
       {groups.map((g) => (
-        <div key={g.label} style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--ink-3)", marginBottom: 4 }}>
-            {g.label}
+        <div key={g.label} style={{ marginBottom: 18 }}>
+          <MonoLabel rule count={g.rows.length} style={{ marginBottom: 9 }}>{g.label}</MonoLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {g.rows.map((r: any) => (
+              <DocumentSlot
+                key={r.id}
+                name={r.label + (r.required ? "" : " (optional)")}
+                state={r.status === "complete" ? "filed" : r.status === "expired" ? "expired" : "missing"}
+              />
+            ))}
           </div>
-          {g.rows.map((r: any) => (
-            <div
-              key={r.id}
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}
-            >
-              <span style={{ fontSize: 13 }}>
-                {r.label}
-                {!r.required && <span style={{ color: "var(--ink-4)" }}> (optional)</span>}
-              </span>
-              {chip(r.status)}
-            </div>
-          ))}
         </div>
       ))}
-    </div>
+    </Panel>
   );
 }
 
-// ── Client Directory ────────────────────────────────────────────────────────
-
-
-// ── Team Directory ──────────────────────────────────────────────────────────
+// ── Team directory ──────────────────────────────────────────────────────────
 
 function TeamDirectory() {
+  const area = useAreaLabel();
   const [, force] = useState(0);
   useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
 
@@ -423,73 +439,65 @@ function TeamDirectory() {
   // acknowledgements (forms about a client live on that client's file instead).
   if (openStaff) {
     return (
-      <div>
-        <div className="ds-ph">
-          <div>
-            <button className="btn btn-ghost" style={{ marginBottom: 8 }} onClick={() => setOpenStaff(null)}>
-              <Icon n="arrowLeft" s={16} /> All team members
-            </button>
-            <h1>{openStaff.name}</h1>
-            <p>Staff file — signed paperwork and acknowledgements for {openStaff.name}.</p>
-          </div>
+      <>
+        <SheetHeader
+          eyebrow={`${area} / Team / ${openStaff.name}`}
+          title={openStaff.name}
+          lead={`Signed paperwork and acknowledgements for ${openStaff.name}. Forms about a client live on that client's file instead.`}
+          actions={
+            <Button variant="outline" iconLeft={<Icon name="arrowLeft" size={16} />} onClick={() => setOpenStaff(null)}>
+              All team members
+            </Button>
+          }
+        />
+        <div className="split" style={{ alignItems: "start" }}>
+          <section>
+            <MonoLabel rule style={{ marginBottom: 12 }}>Filed documents</MonoLabel>
+            <FiledDocuments
+              subjectType="staff"
+              subjectId={openStaff.id}
+              subjectName={openStaff.name}
+              emptyHint={`No paperwork has been filed for ${openStaff.name} yet.`}
+            />
+          </section>
+          <aside>
+            <ChecklistSummary subjectType="staff" subjectId={openStaff.id} person={openStaff} />
+          </aside>
         </div>
-        <ChecklistSummary subjectType="staff" subjectId={openStaff.id} person={openStaff} />
-        <div className="ds-panel" style={{ padding: 16 }}>
-          <FiledDocuments
-            subjectType="staff"
-            subjectId={openStaff.id}
-            subjectName={openStaff.name}
-            emptyHint={`No paperwork has been filed for ${openStaff.name} yet.`}
-          />
-        </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <h1>Team</h1>
+    <>
+      <SheetHeader
+        eyebrow={`${area} / Team`}
+        title="Team"
+        lead="Everyone working as a caregiver. Open someone to see their file and what's still missing from it."
+      />
+      {caregivers.length === 0 ? (
+        <EmptyState title="No caregivers yet" description="Nobody on the team has been hired on as a caregiver." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 880 }}>
+          {caregivers.map((u: any) => {
+            const subs = Store.getSubmissions().filter((s: any) => s.caregiverId === u.id);
+            return (
+              <RecordRow
+                key={u.id}
+                icon={<Icon name="users" size={17} />}
+                title={u.name}
+                subtitle={[u.email, `${subs.length} ${subs.length === 1 ? "submission" : "submissions"}`].filter(Boolean).join(" · ")}
+                meta={u.lastLoginAt ? relTime(u.lastLoginAt) : "Never signed in"}
+                stamp={<Stamp tone={u.status === "active" ? "success" : "neutral"}>{u.status || "Active"}</Stamp>}
+                onClick={() => setOpenStaff(u)}
+              />
+            );
+          })}
         </div>
-      </div>
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead>
-            <tr>
-              <th>Caregiver</th><th>Email</th><th>Submissions</th><th>Last login</th>
-            </tr>
-          </thead>
-          <tbody>
-            {caregivers.map((u: any) => {
-              const subs = Store.getSubmissions().filter((s: any) => s.caregiverId === u.id);
-              return (
-                <tr key={u.id} style={{ cursor: "pointer" }} onClick={() => setOpenStaff(u)}>
-                  <td>
-                    <span className="row-ic">
-                      <span className="ti">{u.initials}</span>
-                      <span>
-                        <span className="cell-main">{u.name}</span>
-                        <span className="cell-sub">{u.status}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td>{u.email}</td>
-                  <td>{subs.length}</td>
-                  <td style={{ color: "var(--ink-3)", fontSize: 12 }}>{u.lastLoginAt ? relTime(u.lastLoginAt) : "Never"}</td>
-                </tr>
-              );
-            })}
-            {caregivers.length === 0 && (
-              <tr><td colSpan={4} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>No caregivers found on the team.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
-
 
 // ── Main export ─────────────────────────────────────────────────────────────
 
@@ -508,12 +516,11 @@ export function OfficeManagerApp({ page, onToast }: { page: string; onNav?: (p: 
 
   return (
     <>
-      {showStartForm && (
-        <StartFormModal
-          onClose={() => setShowStartForm(false)}
-          onToast={(m) => { onToast(m); setShowStartForm(false); }}
-        />
-      )}
+      <StartFormDialog
+        open={showStartForm}
+        onClose={() => setShowStartForm(false)}
+        onToast={(m) => { onToast(m); setShowStartForm(false); }}
+      />
 
       {page === "submissions" && <SubmissionsLedger onView={setViewingSubmission} />}
       {page === "clients" && <ClientsScreen />}

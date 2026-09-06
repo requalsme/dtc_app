@@ -11,11 +11,13 @@
 
 import { useMemo, useState } from "react";
 // @ts-ignore
-import { Icon } from "./fields.jsx";
-// @ts-ignore
 import { DTCStore as Store } from "./store.js";
 import { getSchema } from "./forms/FormWizard";
 import { fmtDate } from "../utils/format";
+import {
+  Icon, Button, Stamp, Input, Select, RecordRow, EmptyState,
+  // @ts-ignore - design system is untyped JSX
+} from "../design/index.js";
 
 type SubjectType = "client" | "staff";
 
@@ -58,74 +60,81 @@ export function FiledDocuments({
   });
 
   return (
-    <div className="filed-docs">
-      <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <input
-          className="input"
-          style={{ flex: 1, minWidth: 180 }}
-          placeholder={`Search ${subjectName ? `${subjectName}'s` : ""} documents`}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        {years.length > 1 && (
-          <select className="input" style={{ maxWidth: 120 }} value={year} onChange={(e) => setYear(e.target.value)}>
-            <option value="all">All years</option>
-            {years.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        )}
-      </div>
+    <div>
+      {records.length > 0 && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ flex: 1, minWidth: 190 }}>
+            <Input
+              placeholder={`Search ${subjectName ? `${subjectName}'s` : ""} documents`}
+              value={q}
+              onChange={(e: any) => setQ(e.target.value)}
+              iconLeft={<Icon name="search" size={17} />}
+            />
+          </div>
+          {years.length > 1 && (
+            <div style={{ width: 140 }}>
+              <Select
+                value={year}
+                onChange={(e: any) => setYear(e.target.value)}
+                options={[{ value: "all", label: "All years" }, ...years.map((y) => ({ value: y, label: y }))]}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
-        <div className="card" style={{ padding: 20, textAlign: "center", color: "var(--ink-3)", fontSize: 13 }}>
-          {records.length === 0
-            ? emptyHint || "No documents filed yet."
-            : "No documents match that search."}
-        </div>
+        <EmptyState
+          title={records.length === 0 ? "Nothing filed yet" : "Nothing matches that"}
+          description={records.length === 0
+            ? emptyHint || "Completed forms are filed here automatically."
+            : "Try a different search, or clear the year filter."}
+        />
       ) : (
-        <div className="card" style={{ padding: "4px 16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           {filtered.map((sub: any) => {
             const schema = getSchema(sub.schemaKey);
             const needsCorrection = sub.status === "needsCorrection";
             return (
-              <div className="subrow" key={sub.id} style={{ cursor: onOpen ? "pointer" : "default" }}>
-                <span
-                  className="si"
-                  style={{ color: needsCorrection ? "var(--amber)" : undefined }}
-                  onClick={() => onOpen && onOpen(sub)}
-                >
-                  <Icon n={schema ? schema.icon : "file"} s={18} />
-                </span>
-                <span className="sinfo" onClick={() => onOpen && onOpen(sub)}>
-                  <span className="nm">{schema ? schema.name : sub.templateName || sub.schemaKey}</span>
-                  <span className="meta">
-                    {sub.submittedAt ? fmtDate(String(sub.submittedAt).slice(0, 10)) : "—"}
-                    {/* On a client's file, who completed it matters; on a staff
-                        member's own file, that would just repeat their name. */}
-                    {subjectType === "client" && sub.caregiverName ? ` · ${sub.caregiverName}` : ""}
-                  </span>
-                </span>
-
-                {sub.pdfUrl ? (
-                  <a
-                    className="stat ok"
-                    href={sub.pdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Open the filed PDF"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    PDF
-                  </a>
-                ) : sub.pdfPending ? (
-                  <span className="stat warn" title="The record is saved; its PDF has not been generated yet.">
-                    PDF pending
-                  </span>
-                ) : (
-                  <span className="stat">{needsCorrection ? "Correction" : sub.status === "reviewed" ? "Reviewed" : "Filed"}</span>
-                )}
-              </div>
+              <RecordRow
+                key={sub.id}
+                icon={<Icon name={needsCorrection ? "alert" : "file"} size={17} />}
+                title={schema ? schema.name : sub.templateName || sub.schemaKey}
+                subtitle={[
+                  sub.submittedAt ? fmtDate(String(sub.submittedAt).slice(0, 10)) : "—",
+                  // On a client's file, who completed it matters; on a staff
+                  // member's own file, that would just repeat their name.
+                  subjectType === "client" && sub.caregiverName ? sub.caregiverName : null,
+                ].filter(Boolean).join(" · ")}
+                stamp={
+                  <Stamp tone={needsCorrection ? "warning" : sub.status === "reviewed" ? "success" : "neutral"}>
+                    {needsCorrection ? "Correction" : sub.status === "reviewed" ? "Reviewed" : "Filed"}
+                  </Stamp>
+                }
+                accentEdge={needsCorrection}
+                onClick={onOpen ? () => onOpen(sub) : undefined}
+                actions={
+                  // The filed PDF is the document itself, so it gets a real
+                  // control rather than being one more status word.
+                  sub.pdfUrl ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      iconRight={<Icon name="download" size={15} />}
+                      onClick={(e: any) => { e.stopPropagation(); window.open(sub.pdfUrl, "_blank", "noopener"); }}
+                    >
+                      PDF
+                    </Button>
+                  ) : sub.pdfPending ? (
+                    <span
+                      title="The record is saved; its PDF has not been generated yet."
+                      style={{ fontSize: 12, color: "var(--text-quiet)" }}
+                    >
+                      PDF pending
+                    </span>
+                  ) : null
+                }
+              />
             );
           })}
         </div>

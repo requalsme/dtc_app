@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 // @ts-ignore
 import { Icon } from "../../components/fields.jsx";
 // @ts-ignore
@@ -6,9 +6,18 @@ import { DTCStore as Store } from "../../components/store.js";
 // @ts-ignore
 import { PdfPreview, getSchema } from "../../components/forms/FormWizard";
 import { FormWizard } from "../../components/forms/FormWizard";
-import { OfficeDashboard } from "./OfficeDashboard";
 import { FiledDocuments } from "../../components/FiledDocuments";
-import { ClientKeyFacts } from "../../components/ClientKeyFacts";
+// Rebuilt from the design system's office_manager UI kit. Both take the same
+// props the screens they replace did, so review and correction still run
+// through SubmissionDetail below.
+// @ts-ignore - JSX module without types
+import { SubmissionsLedger } from "../../console/Submissions.jsx";
+// @ts-ignore - JSX module without types
+import { AuditLog as ConsoleAuditLog } from "../../console/Audit.jsx";
+// @ts-ignore - JSX module without types
+import { ConsoleDashboard } from "../../console/Dashboard.jsx";
+// @ts-ignore - JSX module without types
+import { ClientsScreen } from "../../console/Clients.jsx";
 import { NewHireReview } from "./NewHireReview";
 import { InboundQueue } from "./InboundQueue";
 import { ApplicationsReview } from "./ApplicationsReview";
@@ -203,113 +212,6 @@ function StartFormModal({ onClose, onToast }: { onClose: () => void; onToast: (m
   );
 }
 
-// ── Submissions List ────────────────────────────────────────────────────────
-
-function SubmissionsList({ onView }: { onView: (sub: any) => void }) {
-  const [, force] = useState(0);
-  const [filterClient, setFilterClient] = useState("");
-  const [filterForm, setFilterForm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [search, setSearch] = useState("");
-
-  useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
-
-  const submissions = Store.getSubmissions();
-
-  const filtered = useMemo(() => {
-    return submissions.filter((s: any) => {
-      if (filterClient && s.clientName !== filterClient) return false;
-      if (filterForm && s.schemaKey !== filterForm) return false;
-      if (filterStatus && s.status !== filterStatus) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!s.clientName?.toLowerCase().includes(q) && !s.caregiverName?.toLowerCase().includes(q) && !s.templateName?.toLowerCase().includes(q)) return false;
-      }
-      return true;
-    });
-  }, [submissions, filterClient, filterForm, filterStatus, search]);
-
-  const clientNames = Array.from(new Set<string>(submissions.map((s: any) => String(s.clientName)).filter(Boolean)));
-  const formKeys = Array.from(new Set<string>(submissions.map((s: any) => String(s.schemaKey)).filter(Boolean)));
-
-  const statusChip = (status: string) => {
-    if (status === "reviewed") return <span className="spill pub"><span className="pip" />Reviewed</span>;
-    if (status === "needsCorrection") return <span className="spill warn"><span className="pip" />Needs correction</span>;
-    return <span className="spill ver"><span className="pip" />Submitted</span>;
-  };
-
-  return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <h1>Submissions</h1>
-          <p>{submissions.length} records across all caregivers and workflows.</p>
-        </div>
-      </div>
-
-      <div className="ds-filters">
-        <input className="ds-search" placeholder="Search by name, caregiver, form…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className="ds-select" value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
-          <option value="">All clients</option>
-          {clientNames.map((name) => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <select className="ds-select" value={filterForm} onChange={(e) => setFilterForm(e.target.value)}>
-          <option value="">All forms</option>
-          {formKeys.map((key) => <option key={key} value={key}>{Store.schemaName(key)}</option>)}
-        </select>
-        <select className="ds-select" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          <option value="submitted">Submitted</option>
-          <option value="reviewed">Reviewed</option>
-          <option value="needsCorrection">Needs correction</option>
-        </select>
-      </div>
-
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead>
-            <tr>
-              <th>Client / Form</th>
-              <th>Caregiver</th>
-              <th>Date</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((s: any) => {
-              const schema = getSchema(s.schemaKey);
-              return (
-                <tr key={s.id} onClick={() => onView(s)}>
-                  <td>
-                    <span className="row-ic">
-                      <span className="ti"><Icon n={schema?.icon || "file"} s={16} /></span>
-                      <span>
-                        <span className="cell-main">{s.clientName || "Employee form"}</span>
-                        <span className="cell-sub">{schema?.name || s.schemaKey}</span>
-                      </span>
-                    </span>
-                  </td>
-                  <td style={{ color: "var(--ink-2)" }}>{s.caregiverName}</td>
-                  <td style={{ color: "var(--ink-3)", fontSize: 12 }}>{relTime(s.submittedAt)}</td>
-                  <td>{statusChip(s.status)}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <button className="dbtn dbtn-ghost" style={{ padding: "6px 11px", fontSize: 12 }} onClick={(e) => { e.stopPropagation(); onView(s); }}>
-                      <Icon n="eye" s={13} /> View
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>No submissions match the current filters.</td></tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ── Submission Detail ───────────────────────────────────────────────────────
 
@@ -506,111 +408,6 @@ function ChecklistSummary({ subjectType, subjectId, person }: { subjectType: "cl
 
 // ── Client Directory ────────────────────────────────────────────────────────
 
-function ClientDirectory() {
-  const [, force] = useState(0);
-  const [search, setSearch] = useState("");
-  useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
-
-  const [openClient, setOpenClient] = useState<any>(null);
-  const [clientTab, setClientTab] = useState<"facts" | "docs">("facts");
-
-  const clients = Store.clients.filter((c: any) =>
-    !search || c.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // Drilled into one client: show their file — every document completed about
-  // them, in one place, the way a paper folder would hold it.
-  if (openClient) {
-    return (
-      <div>
-        <div className="ds-ph">
-          <div>
-            <button className="btn btn-ghost" style={{ marginBottom: 8 }} onClick={() => setOpenClient(null)}>
-              <Icon n="arrowLeft" s={16} /> All clients
-            </button>
-            <h1>{openClient.name}</h1>
-            <p>
-              Client file — every form completed about {openClient.name}.
-              {openClient.dob ? ` DOB ${fmtDate(openClient.dob)}.` : ""}
-              {openClient.mrn ? ` MRN ${openClient.mrn}.` : ""}
-            </p>
-          </div>
-        </div>
-        <div className="ds-filters" style={{ gap: 6 }}>
-          <button
-            className={clientTab === "facts" ? "dbtn dbtn-primary" : "dbtn dbtn-ghost"}
-            onClick={() => setClientTab("facts")}
-          >
-            Key details
-          </button>
-          <button
-            className={clientTab === "docs" ? "dbtn dbtn-primary" : "dbtn dbtn-ghost"}
-            onClick={() => setClientTab("docs")}
-          >
-            Filed documents
-          </button>
-        </div>
-        <ChecklistSummary subjectType="client" subjectId={openClient.id} />
-        <div className="ds-panel" style={{ padding: 16 }}>
-          {clientTab === "facts" ? (
-            <ClientKeyFacts clientId={openClient.id} />
-          ) : (
-            <FiledDocuments
-              subjectType="client"
-              subjectId={openClient.id}
-              subjectName={openClient.name}
-              emptyHint={`No forms have been filed for ${openClient.name} yet.`}
-            />
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <h1>Clients</h1>
-        </div>
-      </div>
-      <div className="ds-filters">
-        <input className="ds-search" placeholder="Search clients…" value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead>
-            <tr>
-              <th>Client</th><th>DOB</th><th>MRN</th><th>Physician</th><th>Allergies</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((c: any) => (
-              <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => setOpenClient(c)}>
-                <td>
-                  <span className="row-ic">
-                    <span className="ti">{c.initials}</span>
-                    <span>
-                      <span className="cell-main">{c.name}</span>
-                      {c.notes && <span className="cell-sub">{c.notes}</span>}
-                    </span>
-                  </span>
-                </td>
-                <td>{fmtDate(c.dob)}</td>
-                <td>{c.mrn}</td>
-                <td>{c.physician}</td>
-                <td style={{ color: c.allergies !== "None known" ? "var(--amber)" : "var(--ink-3)" }}>{c.allergies}</td>
-              </tr>
-            ))}
-            {clients.length === 0 && (
-              <tr><td colSpan={5} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>No clients found.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ── Team Directory ──────────────────────────────────────────────────────────
 
@@ -693,69 +490,13 @@ function TeamDirectory() {
   );
 }
 
-// ── Audit View ──────────────────────────────────────────────────────────────
-
-function AuditView() {
-  const [, force] = useState(0);
-  const [search, setSearch] = useState("");
-  const [filterRole, setFilterRole] = useState("");
-  useEffect(() => Store.subscribe(() => force((v) => v + 1)), []);
-
-  const audit = Store.getAudit().filter((e: any) => {
-    if (filterRole && e.role !== filterRole) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!e.actor?.toLowerCase().includes(q) && !e.action?.toLowerCase().includes(q) && !e.target?.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-
-  return (
-    <div>
-      <div className="ds-ph">
-        <div>
-          <h1>Audit log</h1>
-        </div>
-      </div>
-      <div className="ds-filters">
-        <input className="ds-search" placeholder="Search events…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className="ds-select" value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
-          <option value="">All roles</option>
-          <option value="admin">Admin</option>
-          <option value="officeManager">Office Manager</option>
-          <option value="caregiver">Caregiver</option>
-        </select>
-      </div>
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead>
-            <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th></tr>
-          </thead>
-          <tbody>
-            {audit.map((e: any) => (
-              <tr key={e.id} style={{ cursor: "default" }}>
-                <td style={{ color: "var(--ink-3)", fontSize: 12, whiteSpace: "nowrap" }}>{relTime(e.timestamp)}</td>
-                <td>
-                  <span className="cell-main">{e.actor}</span>
-                  {" "}<span className="spill ver" style={{ marginLeft: 4 }}>{e.role}</span>
-                </td>
-                <td>{e.action.replaceAll("_", " ")}</td>
-                <td>{e.target}</td>
-              </tr>
-            ))}
-            {audit.length === 0 && (
-              <tr><td colSpan={4} style={{ textAlign: "center", padding: "32px", color: "var(--ink-3)" }}>No audit events match the criteria.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ── Main export ─────────────────────────────────────────────────────────────
 
-export function OfficeManagerApp({ page, onNav, onToast }: { page: string; onNav: (p: string) => void; onToast: (m: string) => void }) {
+// onNav is still accepted because the route wrapper passes it, but nothing in
+// here needs it any more: the rebuilt screens navigate through react-router
+// themselves rather than asking a parent to change a page string for them.
+export function OfficeManagerApp({ page, onToast }: { page: string; onNav?: (p: string) => void; onToast: (m: string) => void }) {
   const [viewingSubmission, setViewingSubmission] = useState<any>(null);
   const [showStartForm, setShowStartForm] = useState(false);
 
@@ -774,16 +515,16 @@ export function OfficeManagerApp({ page, onNav, onToast }: { page: string; onNav
         />
       )}
 
-      {page === "submissions" && <SubmissionsList onView={setViewingSubmission} />}
-      {page === "clients" && <ClientDirectory />}
+      {page === "submissions" && <SubmissionsLedger onView={setViewingSubmission} />}
+      {page === "clients" && <ClientsScreen />}
       {page === "new-hires" && <NewHireReview onToast={onToast} />}
       {page === "inbound" && <InboundQueue onToast={onToast} />}
       {page === "applications" && <ApplicationsReview onToast={onToast} />}
       {page === "team" && <TeamDirectory />}
-      {page === "audit" && <AuditView />}
-      {page === "dashboard" && <OfficeDashboard onStartForm={() => setShowStartForm(true)} onNav={onNav} />}
+      {page === "audit" && <ConsoleAuditLog />}
+      {page === "dashboard" && <ConsoleDashboard basePath="/office-manager" />}
       {!["submissions", "clients", "new-hires", "inbound", "applications", "team", "audit", "dashboard"].includes(page) && (
-        <OfficeDashboard onStartForm={() => setShowStartForm(true)} onNav={onNav} />
+        <ConsoleDashboard basePath="/office-manager" />
       )}
     </>
   );

@@ -18,3 +18,4 @@ migration/export/
 # Firebase service-account key, used only for the one-time export.
 firebase-key.json
 *serviceAccount*.json
+migration/deleted/

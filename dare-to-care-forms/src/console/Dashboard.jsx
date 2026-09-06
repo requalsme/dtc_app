@@ -70,6 +70,14 @@ function MetricRail({ items }) {
   );
 }
 
+// The eyebrow names the section you are actually in. It previously said
+// "Office manager" on every surface, including the administrator's, which is
+// the sort of small untruth that makes a person distrust the rest of a screen.
+const AREA_LABEL = {
+  "/admin": "Administrator",
+  "/office-manager": "Office manager",
+};
+
 export function ConsoleDashboard({ basePath = "/admin" }) {
   const Store = useStore();
   const navigate = useNavigate();
@@ -106,7 +114,7 @@ export function ConsoleDashboard({ basePath = "/admin" }) {
       <img className="watermark" src="/brand/assets/mark-leaf.png" alt="" />
 
       <SheetHeader
-        eyebrow="Office manager / Dashboard"
+        eyebrow={(AREA_LABEL[basePath] || "Console") + " / Dashboard"}
         title={today}
         lead={lead}
         actions={

@@ -1,0 +1,17 @@
+:root{
+/* A normal section does not float. Only dropdowns, modals, command palettes and
+   floating toolbars get a shadow, and it is always a paired 1px + soft spread. */
+--shadow-none:none;
+--shadow-raised:0 1px 2px rgba(20,59,42,.04),0 8px 24px rgba(20,59,42,.05);
+--shadow-overlay:0 1px 2px rgba(20,59,42,.06),0 18px 44px rgba(20,59,42,.13);
+--shadow-lift:0 1px 2px rgba(20,59,42,.05);
+/* A filled control's own shadow: a tight contact shadow plus a soft ambient one,
+   both tinted with the fill's hue. No inner highlight — that reads as a bevel. */
+--shadow-control:0 1px 1px rgba(20,59,42,.10),0 2px 6px rgba(20,59,42,.10);
+--shadow-control-hover:0 2px 3px rgba(20,59,42,.12),0 8px 20px rgba(20,59,42,.16);
+--shadow-control-quiet:0 1px 1px rgba(20,59,42,.05);
+--shadow-focus:0 0 0 3px rgba(82,139,111,.26);
+--shadow-paper:var(--shadow-overlay);
+--overlay-scrim:rgba(20,59,42,.36);
+--inset-edge:inset 0 1px 0 rgba(255,255,255,.7);
+}

@@ -1,0 +1,18 @@
+:root{
+/* Four densities. Dashboards run standard; audit logs and schedules run compact
+   or dense. Density changes row height and padding — never type size below 13px. */
+--row-h-comfortable:64px;
+--row-h-standard:52px;
+--row-h-compact:42px;
+--row-h-dense:34px;
+--row-pad-comfortable:18px;
+--row-pad-standard:14px;
+--row-pad-compact:10px;
+--row-pad-dense:7px;
+
+--control-height-sm:30px; --control-height-md:38px; --control-height-lg:46px;
+}
+[data-density="comfortable"]{--row-h:var(--row-h-comfortable);--row-pad:var(--row-pad-comfortable)}
+[data-density="standard"]{--row-h:var(--row-h-standard);--row-pad:var(--row-pad-standard)}
+[data-density="compact"]{--row-h:var(--row-h-compact);--row-pad:var(--row-pad-compact)}
+[data-density="dense"]{--row-h:var(--row-h-dense);--row-pad:var(--row-pad-dense)}

@@ -20,6 +20,8 @@ import ClientPortal from './features/client/ClientPortal';
 import './styles/shell.css';
 import './styles/desktop.css';
 import './styles/wizard.css';
+// Last, so its restyle of the shell classes wins on equal specificity.
+import './design/console-shell.css';
 
 /* ===== Toast ===== */
 function Toast({ msg, onClear }: { msg: string | null; onClear: () => void }) {

@@ -1,0 +1,120 @@
+:root{
+/* ---- Brand greens (base scale) ---- */
+--green-900:#154C36; /* Dark Forest */
+--green-600:#2E8250; /* the lit top edge of a filled control */
+--green-700:#297A57; /* Primary Green */
+--green-500:#578D74; /* Eucalyptus */
+--green-400:#81AD97; /* Sage */
+--green-300:#ABCFBB; /* Soft Mint */
+--green-200:#CBE1CA; /* Pale Sage */
+--green-100:#D9E6DA; /* Pale Mint */
+--green-050:#EFF5EF;
+
+/* ---- Neutrals: warm, paper-leaning. Pure white is never a page ground. ---- */
+--white:#FFFFFF;
+--warm-white:#F9FAF9;
+--paper:#F9FAF9;      /* primary application ground */
+--paper-2:#F1F6F1;    /* sunken paper, table header rails */
+--paper-3:#DCE7DC;    /* paper edge / hairline */
+--gray-100:#EEF1EE;
+--gray-200:#E2E8E3;
+--gray-300:#C8D3CB;
+--gray-400:#667469; /* quiet text — 4.70:1 on paper, the AA floor for 13px */
+--gray-500:#586A60; /* Muted Text — 5.75:1 on paper */
+--gray-900:#24332B; /* Main Text */
+
+/* ---- Semantic hues ---- */
+--plum-600:#73586F;
+--plum-100:#EFE7ED;
+--cranberry-600:#8F3F4A;
+--cranberry-100:#F3E3E6;
+--teal-600:#356F75;
+--teal-100:#DFECEC;
+
+/* ---- Role colors (from the application's RBAC set) ---- */
+--role-admin:#154C36;
+--role-office:#356F75;
+--role-caregiver:#297A57;
+--role-new-hire:#73586F;
+--role-client:#6B5E8C;
+
+/* ---- Semantic roles: every colour has a job ---- */
+--surface-base:var(--paper);
+--surface-raised:var(--white);
+--surface-sunken:var(--paper-2);
+--surface-inverse-base:#154C36;
+
+--text-primary:var(--gray-900);
+--text-secondary:var(--gray-500);
+/* Quiet is the lightest text the system permits. It is still AA at 13px —
+   every use of it in the product is small type, and the workforce reading it
+   is older, so there is no tier below this. Anything fainter is decoration,
+   not text, and must not carry meaning. */
+--text-quiet:var(--gray-400);
+--text-inverse:#F2EFE6;
+
+--border-subtle:#DCE7DC;
+--border-default:#C6D6C8;
+--border-strong:var(--green-500);
+
+--brand-primary:var(--green-700);
+--brand-accent:var(--green-900);
+
+--status-success:#1E6848;
+--status-warning:var(--plum-600);
+--status-danger:var(--cranberry-600);
+--status-info:var(--teal-600);
+
+/* ---- Semantic aliases ---- */
+--brand:var(--green-700);
+--brand-strong:var(--green-900);
+--brand-soft:var(--green-300);
+
+--surface-app:var(--paper);
+--surface-card:var(--white);
+--surface-sunken:var(--paper-2);
+--surface-accent:var(--green-100);
+--surface-accent-strong:var(--green-200);
+--surface-inverse:#154C36;   /* the deep rail */
+--surface-inverse-2:var(--green-900);
+--surface-rail:var(--paper-2);
+--surface-paper:var(--white);
+
+--text-body:var(--gray-900);
+--text-muted:var(--gray-500);
+--text-faint:var(--gray-400); /* legacy alias — same value as --text-quiet */
+--text-on-inverse:#F2EFE6;
+--text-on-inverse-muted:rgba(241,246,241,.72); /* 5.4:1 on the #143B2A rail */
+--text-gold:#9A7B3F;  /* fine-print accent, used at label scale only */
+--text-brand:var(--green-900);
+--text-on-brand:var(--white);
+--text-disabled:var(--gray-300);
+
+--border-hair:#E9F0E9;
+--border-paper:var(--paper-3);
+--border-inverse:rgba(255,255,255,.14);
+--border-inverse-strong:rgba(255,255,255,.28);
+--border-brand:var(--green-300);
+
+--focus-ring:var(--green-500);
+
+--action-primary-bg:var(--green-900);
+--action-primary-bg-hover:#12402C;
+--action-primary-fg:var(--white);
+--action-secondary-bg:var(--green-100);
+--action-secondary-bg-hover:var(--green-200);
+--action-secondary-fg:var(--green-900);
+--action-ghost-fg:var(--green-700);
+
+--state-selected-bg:var(--green-100);
+--state-selected-fg:var(--green-900);
+
+--success-fg:#1E6848;
+--success-bg:#DDEBE3;
+--warning-fg:var(--plum-600);
+--warning-bg:var(--plum-100);
+--error-fg:var(--cranberry-600);
+--error-bg:var(--cranberry-100);
+--info-fg:var(--teal-600);
+--info-bg:var(--teal-100);
+}

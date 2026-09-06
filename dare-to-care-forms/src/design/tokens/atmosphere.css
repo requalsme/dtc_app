@@ -1,0 +1,67 @@
+/* Atmosphere — the ambient layer. Everything here is optional, additive, and
+   collapses to nothing under prefers-reduced-motion.
+
+   The brand's mark is an infinity: care that continues and grows rather than
+   completing. So motion in this system *accumulates* — things rise into place,
+   fill up, and breathe. Nothing bounces, spins, or resets. */
+
+@keyframes dtc-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes dtc-settle{from{opacity:0;transform:translateY(4px) scale(.994)}to{opacity:1;transform:none}}
+@keyframes dtc-breathe{0%,100%{transform:scale(1);opacity:var(--dtc-breathe-low,.05)}50%{transform:scale(1.035);opacity:var(--dtc-breathe-high,.08)}}
+@keyframes dtc-trace{from{stroke-dashoffset:var(--dtc-trace-length,200)}to{stroke-dashoffset:0}}
+@keyframes dtc-grow-y{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes dtc-grow-x{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes dtc-drift{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(-10px,-14px,0)}}
+@keyframes dtc-sheen{from{background-position:-140% 0}to{background-position:240% 0}}
+
+/* Entrances. Content arrives from below — it accrues onto the page. */
+.dtc-rise{animation:dtc-rise var(--duration-panel) var(--ease-out) both}
+.dtc-settle{animation:dtc-settle var(--duration-panel) var(--ease-out) both}
+
+/* Stagger: children arrive in sequence, 45ms apart, so a list reads as filling
+   in rather than snapping on. Caps at 10 so long tables don't crawl. */
+.dtc-stagger>*{animation:dtc-settle var(--duration-panel) var(--ease-out) both}
+.dtc-stagger>*:nth-child(1){animation-delay:0ms}
+.dtc-stagger>*:nth-child(2){animation-delay:45ms}
+.dtc-stagger>*:nth-child(3){animation-delay:90ms}
+.dtc-stagger>*:nth-child(4){animation-delay:135ms}
+.dtc-stagger>*:nth-child(5){animation-delay:180ms}
+.dtc-stagger>*:nth-child(6){animation-delay:225ms}
+.dtc-stagger>*:nth-child(7){animation-delay:270ms}
+.dtc-stagger>*:nth-child(8){animation-delay:315ms}
+.dtc-stagger>*:nth-child(9){animation-delay:360ms}
+.dtc-stagger>*:nth-child(n+10){animation-delay:405ms}
+
+/* The mark, breathing. Always-on care — slow enough to read as alive, not as a
+   spinner. Only ever applied to a decorative watermark, never to UI. */
+.dtc-breathe{animation:dtc-breathe 7s var(--ease-standard) infinite}
+.dtc-drift{animation:dtc-drift 22s var(--ease-standard) infinite}
+
+/* Growth indicators: an active rail or underline draws itself from its origin. */
+.dtc-grow-y{transform-origin:top;animation:dtc-grow-y var(--duration-panel) var(--ease-out) both}
+.dtc-grow-x{transform-origin:left;animation:dtc-grow-x var(--duration-panel) var(--ease-out) both}
+
+/* A stroke that traces itself — used on the infinity/leaf outline in loading and
+   empty states instead of a spinner. Set --dtc-trace-length to the path length. */
+.dtc-trace{stroke-dasharray:var(--dtc-trace-length,200);animation:dtc-trace 1.6s var(--ease-standard) both}
+.dtc-trace-loop{stroke-dasharray:var(--dtc-trace-length,200);animation:dtc-trace 2.6s var(--ease-standard) infinite}
+
+/* Ambient grounds. A single soft wash of brand light — no multi-stop gradients,
+   no colour ramps. Layer behind content, never over text. */
+.dtc-veil{position:relative}
+.dtc-veil::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,var(--green-050) 0%,rgba(249,250,249,0) 340px)}
+.dtc-halo{position:relative}
+.dtc-halo::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(900px 420px at 12% -8%,rgba(41,122,87,.07),transparent 70%)}
+
+/* Skeleton loading: a pale sage sheen, 1.6s, never a grey pulse. */
+.dtc-skeleton{background:linear-gradient(90deg,var(--paper-2) 25%,var(--green-100) 37%,var(--paper-2) 63%);background-size:220% 100%;animation:dtc-sheen 1.6s linear infinite;border-radius:var(--radius-input)}
+
+/* Hover lift — cards raise by shadow and border, never by scale. */
+.dtc-lift{transition:box-shadow var(--duration-panel) var(--ease-standard),border-color var(--duration-panel) var(--ease-standard),transform var(--duration-hover) var(--ease-standard)}
+.dtc-lift:hover{box-shadow:var(--shadow-raised);border-color:var(--border-brand)}
+.dtc-press:active{transform:scale(.985)}
+
+@media (prefers-reduced-motion:reduce){
+.dtc-rise,.dtc-settle,.dtc-stagger>*,.dtc-breathe,.dtc-drift,.dtc-grow-y,.dtc-grow-x,.dtc-trace,.dtc-trace-loop,.dtc-skeleton{animation:none !important}
+.dtc-lift,.dtc-press{transition:none}
+}

@@ -1,0 +1,47 @@
+:root{
+/* Radius is assigned by object, not applied universally — that variation is what
+   gives each object its own identity. Rounded, but never uniformly rounded. */
+--radius-none:0px;
+--radius-xs:2px;
+--radius-sm:4px;
+--radius-md:8px;
+--radius-lg:12px;
+--radius-pill:999px;
+
+/* Continuous curvature: radii are generous and scale with the object, the way a
+   physical control does. Nothing is beveled, nothing is gradient-lit — a filled
+   control is a flat solid that moves. */
+--radius-table:4px;   /* ledger rows, table shells */
+--radius-input:9px;   /* text fields, selects, textareas */
+--radius-cta:10px;    /* buttons — generous, never pill */
+--radius-cta-lg:12px; /* large buttons keep the same optical curvature */
+--radius-panel:14px;  /* panels, records, tiles */
+--radius-modal:18px;  /* dialogs, sheets, floating menus */
+--radius-stamp:8px;   /* status stamps */
+--radius-chip:999px;  /* chips stay pill */
+
+/* Legacy aliases */
+--radius-hair:var(--radius-xs);
+--radius-control:var(--radius-cta);
+
+--hairline:1px; /* @kind spacing */
+--rule-strong:2px; /* @kind spacing */
+/* status bar on the leading edge */
+--indicator:3px; /* @kind spacing */
+
+--grid-line:rgba(42,121,85,.035);
+--grid-size:32px; /* @kind spacing */
+
+/* Invisible alignment system — unrelated objects share these lines */
+--col-label:160px;
+--col-action:120px;
+--page-edge:16px; /* @kind spacing */
+--page-edge-lg:56px; /* @kind spacing */
+--grid-internal:32px; /* @kind spacing */
+--section-gap:64px; /* @kind spacing */
+--container-max:1280px;
+--measure:58ch; /* @kind spacing */
+--sidebar-width:252px;
+--topbar-height:60px;
+--touch-min:44px;
+}

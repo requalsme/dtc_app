@@ -1,0 +1,8 @@
+/* Type stack — chosen against the printed brochure and business card.
+   Lora carries headings and all figures/timestamps (warm, established, sturdy
+   figures). Figtree is the UI sans. DM Mono appears only on small uppercase
+   labels and status stamps. The application codebase's Plus Jakarta Sans +
+   Fraunces pairing is deliberately replaced.
+   The logo's ornamental didone still has no font file — Lora is the nearest
+   available stand-in for brand headlines; ask the client for the original. */
+@import url("https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap");

@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Navigation" subtitle="Role rail, tabs, the wizard ladder and role tiles" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css"><style>body{margin:0;padding:22px;background:var(--surface-app)}</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script></head><body><div id="root"></div>
+<script type="text/babel">
+const { Icon, Logo, MonoLabel, Rule, Button, IconButton, Panel, Stamp, Chip, Avatar,
+  Input, Textarea, Select, Checkbox, Radio, Switch, SignaturePad, ScoreMeter,
+  NavItem, Tabs, Stepper, RoleTile, Banner, Dialog, EmptyState, Toast,
+  RecordRow, MetricTile, DocumentSlot, VideoModule } = window.DareToCareDesignSystem_8f725c;
+const Row = ({children, gap=12, style}) => <div style={{display:"flex",alignItems:"center",gap,flexWrap:"wrap",...style}}>{children}</div>;
+const Stack = ({children, gap=16, style}) => <div style={{display:"flex",flexDirection:"column",gap,...style}}>{children}</div>;
+
+function Demo(){
+ const [t,setT]=React.useState("pending");
+ const [n,setN]=React.useState("Inbound");
+ const [st,setSt]=React.useState(2);
+ return <Row gap={22} style={{alignItems:"flex-start"}}>
+  <div style={{width:216,background:"var(--surface-inverse)",borderRadius:"var(--radius-panel)",padding:"14px 0"}}>
+   {[["Dashboard","grid"],["Submissions","inbox"],["Inbound","upload"],["Applications","users"],["Training courses","video"]].map(([l,i])=>
+     <div key={l} style={{padding:"0 8px"}}>
+       <NavItem icon={<Icon name={i} size={17}/>} label={l} active={n===l} onClick={()=>setN(l)}
+         badge={l==="Inbound"?4:undefined} external={l==="Training courses"}
+         style={n===l?{background:"rgba(255,255,255,.08)",color:"var(--text-on-inverse)"}:{color:"rgba(241,246,241,.62)"}}/>
+     </div>)}
+  </div>
+  <Stack gap={26} style={{flex:1}}>
+   <Tabs value={t} onChange={setT} tabs={[{value:"pending",label:"Pending review",count:6},{value:"approved",label:"Approved",count:214},{value:"drafts",label:"Drafts"}]}/>
+   <Row gap={24} style={{alignItems:"flex-start"}}>
+    <div style={{flex:1}}>
+     <MonoLabel rule style={{marginBottom:10}}>Wizard ladder</MonoLabel>
+     <Stepper steps={["Client details","Home environment","Fall risk","Signatures"]} current={st} onSelect={setSt}/>
+    </div>
+    <Stack gap={8} style={{flex:1}}>
+     <RoleTile role="caregiver" title="Caregiver" summary="Daily forms, client records, training." hint="caregiver@daretocare"/>
+     <RoleTile role="office" title="Office manager" summary="Review, assign and file." selected/>
+    </Stack>
+   </Row>
+  </Stack>
+ </Row>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script></body></html>

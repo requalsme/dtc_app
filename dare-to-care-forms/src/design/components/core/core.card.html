@@ -1,0 +1,148 @@
+<!-- @dsCard group="Components" viewport="700x900" name="Core" subtitle="Specimen plate — actions, containers, status and identity" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>
+html,body{margin:0;background:var(--surface-base)}
+#root{position:relative;overflow:hidden}
+.plate{position:relative;padding:26px 0 26px 32px}
+.mark{position:absolute;right:-70px;top:-64px;width:300px;opacity:.04;pointer-events:none}
+
+/* Asymmetry is the point: the rule stops short, the dark plate bleeds off the
+   right edge, and nothing sits in an even 3-up grid. */
+.head{display:flex;align-items:flex-start;gap:20px;padding-right:34px}
+.hrule{height:1px;background:var(--border-default);margin:16px 96px 0 0}
+
+.two{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:0;margin-top:20px}
+.left{padding-right:26px}
+.bleed{background:var(--surface-inverse);border-radius:8px 0 0 8px;padding:20px 24px 22px 22px;position:relative;overflow:hidden;align-self:start}
+.bleed img{position:absolute;right:-46px;bottom:-58px;width:190px;opacity:.08}
+
+/* Foundry-style ladder: specimen left, tracked mono annotation right, hairline
+   between rows that indents rather than spanning edge to edge. */
+.ladder{display:flex;flex-direction:column}
+.rung{display:flex;align-items:center;gap:16px;padding:8px 0}
+.rung+.rung{border-top:1px solid var(--border-hair)}
+.rung .ann{margin-left:auto;font-family:var(--font-mono);text-transform:uppercase;font-size:10px;letter-spacing:.16em;color:var(--text-quiet);white-space:nowrap}
+
+.foot{margin-top:20px;padding:16px 32px 0 0;border-top:1px solid var(--border-hair)}
+.pair{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.cap{font-family:var(--font-mono);text-transform:uppercase;font-size:10px;letter-spacing:.18em;color:var(--text-quiet)}
+.idx{font-family:var(--font-figure);font-size:12.5px;font-weight:500;color:var(--brand-primary);font-variant-numeric:tabular-nums}
+.dsp{font-family:var(--font-display);font-weight:500;letter-spacing:-.024em;color:var(--brand-accent)}
+@media (max-width:660px){.two{grid-template-columns:minmax(0,1fr)}.bleed{border-radius:8px;margin-right:34px}}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script></head><body><div id="root"></div>
+<script type="text/babel">
+const { Icon, Logo, Button, IconButton, Panel, Stamp, Chip, Avatar, Rule } = window.DareToCareDesignSystem_8f725c;
+
+const Rung = ({ ann, children }) => (
+  <div className="rung">{children}<span className="ann">{ann}</span></div>
+);
+
+function Plate(){
+  const [sel,setSel]=React.useState("Fall risk");
+  return (
+    <div className="plate">
+      <img className="mark" src="../../assets/mark-leaf.png" alt="" aria-hidden="true"/>
+
+      <header className="head">
+        <div style={{flex:1}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+            <span className="idx">01</span>
+            <span className="cap">Specimen plate</span>
+          </div>
+          <h1 className="dsp" style={{margin:"10px 0 0",fontSize:31,lineHeight:1.1}}>
+            Actions &amp; containers
+          </h1>
+        </div>
+        <Logo variant="mark" height={34} basePath="../.."/>
+      </header>
+      <div className="hrule"></div>
+
+      <div className="two">
+        <div className="left">
+          <div style={{display:"flex",alignItems:"flex-end",gap:18,paddingBottom:14}}>
+            <Button size="lg" iconRight={<Icon name="chevron" size={17}/>}>Submit for review</Button>
+            <p style={{margin:0,maxWidth:"27ch",fontSize:13,lineHeight:1.55,color:"var(--text-secondary)"}}>
+              Flat fill, tinted contact shadow, 10px continuous radius. Press it — it compresses to&nbsp;97%.
+            </p>
+          </div>
+
+          <div className="ladder">
+            <Rung ann="Secondary"><Button variant="secondary">Save draft</Button></Rung>
+            <Rung ann="Outline"><Button variant="outline">Assign form</Button></Rung>
+            <Rung ann="Ghost"><Button variant="ghost">Cancel</Button></Rung>
+            <Rung ann="Destructive"><Button variant="danger" iconLeft={<Icon name="trash" size={15}/>}>Discard</Button></Rung>
+            <Rung ann="Disabled"><Button disabled>Unavailable</Button></Rung>
+            <Rung ann="Icon only">
+              <div style={{display:"flex",gap:8}}>
+                <IconButton icon={<Icon name="download" size={17}/>} label="Download" variant="outline"/>
+                <IconButton icon={<Icon name="eye" size={17}/>} label="Preview"/>
+                <IconButton icon={<Icon name="check" size={17}/>} label="Approve" variant="solid"/>
+              </div>
+            </Rung>
+          </div>
+
+          <div style={{display:"flex",gap:14,marginTop:18,alignItems:"stretch"}}>
+            <Panel notch padding={15} interactive style={{flex:1.2}}>
+              <span className="cap">Filed record</span>
+              <div className="dsp" style={{marginTop:8,fontSize:19,lineHeight:1.2}}>Chamfered corner</div>
+              <p style={{margin:"5px 0 0",fontSize:12.5,lineHeight:1.5,color:"var(--text-secondary)"}}>
+                Hover it — the panel lifts, it doesn't recolour.
+              </p>
+            </Panel>
+            <Panel accentEdge padding={15} style={{flex:1}}>
+              <span className="cap">Active</span>
+              <div className="dsp" style={{marginTop:8,fontSize:19,lineHeight:1.2}}>Leading rule</div>
+            </Panel>
+          </div>
+        </div>
+
+        <aside className="bleed">
+          <img src="../../assets/mark-leaf-white.png" alt="" aria-hidden="true"/>
+          <div style={{position:"relative"}}>
+            <span className="cap" style={{color:"var(--green-300)"}}>Status</span>
+            <p style={{margin:"9px 0 14px",fontSize:12.5,lineHeight:1.5,color:"rgba(241,246,241,.62)"}}>
+              Fixed cells, so a column aligns. The leaf's fill is the state.
+            </p>
+            <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-start"}}>
+              <Stamp tone="success" solid labelWidth={140} onClick={()=>{}}>Approved</Stamp>
+              <Stamp tone="info" solid labelWidth={140} onClick={()=>{}}>Submitted</Stamp>
+              <Stamp tone="warning" solid labelWidth={140} onClick={()=>{}}>Correction</Stamp>
+              <Stamp tone="error" solid labelWidth={140}>Expired</Stamp>
+              <Stamp tone="neutral" solid leaf={false} labelWidth={140}>Draft</Stamp>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div className="foot">
+        <div style={{display:"flex",alignItems:"center",gap:26,flexWrap:"wrap"}}>
+          <div>
+            <span className="cap">Selection</span>
+            <div className="pair" style={{marginTop:10,gap:8}}>
+              {["Fall risk","Medication","Activity"].map(t=>(
+                <Chip key={t} selected={sel===t} onClick={()=>setSel(t)}>{t}</Chip>
+              ))}
+              <Chip onRemove={()=>{}} icon={<Icon name="leaf" size={13}/>}>Low sodium</Chip>
+            </div>
+          </div>
+          <Rule vertical length={44}/>
+          <div>
+            <span className="cap">Identity</span>
+            <div className="pair" style={{marginTop:10}}>
+              <Avatar name="Devon Price" size="sm" role="caregiver"/>
+              <Avatar name="Priya Raman" role="office"/>
+              <Avatar name="Tasha Bell" size="lg" role="new-hire"/>
+              <Avatar size="lg" markFallback basePath="../.."/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Plate />);
+</script></body></html>

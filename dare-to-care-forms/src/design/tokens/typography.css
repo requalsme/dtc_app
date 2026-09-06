@@ -1,0 +1,40 @@
+:root{
+--font-display:"Lora","Iowan Old Style",Georgia,serif;
+--font-ui:"Figtree","Helvetica Neue",system-ui,sans-serif;
+--font-mono:"DM Mono",ui-monospace,Menlo,monospace; /* reserved: file names, IDs, code — not labels */
+--font-label:"Figtree","Helvetica Neue",system-ui,sans-serif;
+/* Figures, timestamps and table numerals are set in the serif, not the mono. */
+--font-figure:"Lora",Georgia,serif;
+
+/* Ladder. Each step has a job; the jump between display and metadata is the
+   point — an editorial heading beside 11px tracked mono is the house contrast. */
+--type-display-size:50px; --type-display-lh:56px; --type-display-ls:-0.024em; --type-display-weight:500;
+--type-title-size:36px;   --type-title-lh:44px;   --type-title-ls:-0.022em; --type-title-weight:500;
+--type-section-size:24px; --type-section-lh:30px; --type-section-ls:-0.018em; --type-section-weight:600;
+--type-card-size:17px;    --type-card-lh:22px;    --type-card-ls:-0.011em;  --type-card-weight:600;
+--type-body-size:15px;    --type-body-lh:23px;    --type-body-ls:0;         --type-body-weight:400;
+--type-support-size:13px; --type-support-lh:18px; --type-support-ls:0;      --type-support-weight:400;
+--type-meta-size:11px;    --type-meta-lh:16px;    --type-meta-ls:0.11em;    --type-meta-weight:600;
+--type-figure-inline-size:13px; --type-figure-inline-ls:0.02em;
+--type-meta-wide-ls:0.16em;
+
+/* Numerals set in display type carry dashboard figures */
+--type-figure-size:40px; --type-figure-lh:1; --type-figure-ls:-0.02em; --type-figure-weight:500;
+
+/* Legacy aliases kept so older cards keep resolving */
+--text-display-size:var(--type-display-size); --text-display-lh:1.07; --text-display-ls:var(--type-display-ls);
+--text-h1-size:var(--type-title-size); --text-h1-lh:1.16;
+--text-h2-size:var(--type-section-size); --text-h2-lh:1.25;
+--text-h3-size:var(--type-card-size); --text-h3-lh:1.3;
+--text-body-lg-size:17px; --text-body-lg-lh:1.6;
+--text-body-size:var(--type-body-size); --text-body-lh:1.53;
+--text-sm-size:var(--type-support-size); --text-sm-lh:1.38;
+--text-xs-size:12px; --text-xs-lh:1.4;
+--text-mono-size:var(--type-meta-size); --text-mono-lh:1.45; --text-mono-ls:var(--type-meta-ls);
+--text-mono-lg-size:11px; --text-mono-lg-ls:var(--type-meta-wide-ls);
+
+--weight-regular:400;
+--weight-medium:500;
+--weight-semibold:600;
+--weight-bold:700;
+}

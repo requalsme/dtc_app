@@ -1,0 +1,72 @@
+<!-- @dsCard group="Components" viewport="700x520" name="Records" subtitle="Status tags with the leaf condition, submission rows, metrics, file checklist" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css"><style>body{margin:0;padding:22px;background:var(--surface-app)}</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script></head><body><div id="root"></div>
+<script type="text/babel">
+const { Icon, Logo, MonoLabel, Rule, Button, IconButton, Panel, Stamp, Chip, Avatar,
+  Input, Textarea, Select, Checkbox, Radio, Switch, SignaturePad, ScoreMeter,
+  NavItem, Tabs, Stepper, RoleTile, Banner, Dialog, EmptyState, Toast,
+  RecordRow, MetricTile, DocumentSlot, VideoModule } = window.DareToCareDesignSystem_8f725c;
+const Row = ({children, gap=12, style}) => <div style={{display:"flex",alignItems:"center",gap,flexWrap:"wrap",...style}}>{children}</div>;
+const Stack = ({children, gap=16, style}) => <div style={{display:"flex",flexDirection:"column",gap,...style}}>{children}</div>;
+
+function Demo(){
+ const [sel,setSel]=React.useState(0);
+ return <Stack gap={20}>
+  <div>
+   <MonoLabel rule style={{marginBottom:12}}>Status tags · one leaf, filled by progress</MonoLabel>
+   <Row gap={10}>
+    <Stamp tone="success">Approved</Stamp>
+    <Stamp tone="info">Submitted</Stamp>
+    <Stamp tone="warning">Needs correction</Stamp>
+    <Stamp tone="error">Expired</Stamp>
+    <Stamp tone="neutral">Draft</Stamp>
+   </Row>
+   <Row gap={10} style={{marginTop:10}}>
+    <Stamp tone="success" solid>Approved</Stamp>
+    <Stamp tone="info" solid>Submitted</Stamp>
+    <Stamp tone="warning" solid>Needs correction</Stamp>
+    <Stamp tone="error" solid>Expired</Stamp>
+    <Stamp tone="neutral" leaf={false}>No leaf · dense tables</Stamp>
+   </Row>
+  </div>
+  <Row gap={14} style={{alignItems:"stretch"}}>
+   <MetricTile label="Pending review" value="06" note="Oldest waiting 2 days" tone="alert" icon={<Icon name="inbox" size={14}/>}/>
+   <MetricTile label="Inbound to file" value="04" note="Two matched" icon={<Icon name="upload" size={14}/>}/>
+   <MetricTile label="Forms filed" value="214" unit="MTD" note="+18 vs February"/>
+   <MetricTile tone="accent" label="Applications" value="03" note="One clears today" icon={<Icon name="users" size={14}/>}/>
+  </Row>
+  <div>
+   <MonoLabel rule count={3} style={{marginBottom:10}}>Submissions</MonoLabel>
+   <Stack gap={8}>
+    {[["Fall Risk Assessment","Margaret Hale · Devon Price","Mar 4 · 9:48 am","info","Submitted"],
+      ["Medication List","Harold Simms · Ana Ruiz","Mar 4 · 9:12 am","warning","Needs correction"],
+      ["Client Admission","Yolanda Reeves · Priya Raman","Mar 3 · 4:02 pm","success","Approved"]].map(([t,s,m,tone,label],i)=>
+      <RecordRow key={t} index={i+1} icon={<Icon name="fileText" size={17}/>} title={t} subtitle={s} meta={m}
+        stamp={<Stamp tone={tone}>{label}</Stamp>} selected={sel===i} accentEdge={sel===i} onClick={()=>setSel(i)}/>)}
+   </Stack>
+  </div>
+  <Row gap={22} style={{alignItems:"flex-start"}}>
+   <div style={{flex:1}}>
+    <MonoLabel rule style={{marginBottom:10}}>Personnel file</MonoLabel>
+    <Stack gap={6}>
+     <DocumentSlot index={1} name="Signed offer letter" state="filed" meta="Filed Feb 20"/>
+     <DocumentSlot index={2} name="TB test" state="expiring" meta="Exp. Apr 12"/>
+     <DocumentSlot index={3} name="Background check consent" state="missing"/>
+    </Stack>
+   </div>
+   <div style={{flex:1}}>
+    <MonoLabel rule style={{marginBottom:10}}>Training modules</MonoLabel>
+    <Stack gap={8}>
+     <VideoModule index={1} title="Welcome & policies" duration="8 min" complete/>
+     <VideoModule index={2} title="Infection control" duration="14 min" progress={45}/>
+     <VideoModule index={3} title="Documentation standards" duration="9 min" locked/>
+    </Stack>
+   </div>
+  </Row>
+ </Stack>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script></body></html>

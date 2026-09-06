@@ -1,0 +1,79 @@
+/* Console layout for the office/admin surfaces.
+ *
+ * Lifted out of the design kit's ui_kits/office_manager/index.html, where it
+ * lived in a <style> block because the kit runs as a static prototype. Only the
+ * layout rules come across; every colour, size and duration below is a token
+ * from src/design/tokens, so this file never hardcodes a brand value.
+ */
+
+.console { display: flex; min-height: 100vh; }
+
+.rail {
+  width: 252px; flex: 0 0 252px;
+  background: var(--surface-inverse);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh; overflow: hidden;
+}
+/* A lit edge rather than a border: brightest at the middle, fading at both
+   ends, so the rail reads as a lifted plane instead of a boxed sidebar. */
+.rail::after {
+  content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 1px;
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.18), rgba(255,255,255,.02));
+}
+
+.stage { flex: 1; min-width: 0; position: relative; overflow: hidden; }
+/* Light falls from the top of the stage and pools slightly to the left, which
+   is what keeps a very pale ground from reading as flat grey. */
+.stage::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(180deg, var(--green-050) 0%, rgba(249,250,249,0) 340px),
+    radial-gradient(900px 420px at 12% -8%, rgba(41,122,87,.06), transparent 70%);
+}
+
+.sheet { position: relative; padding: 44px 56px 72px; max-width: 1180px; }
+
+.ledger-head, .ledger-row { display: grid; align-items: center; gap: 20px; }
+.ledger-row {
+  border-top: 1px solid var(--border-hair);
+  padding: 17px 6px; border-radius: 8px;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.ledger-row:hover { background: var(--white); }
+.ledger-head { padding: 0 4px 10px; }
+
+.split { display: grid; grid-template-columns: minmax(0, 1.72fr) minmax(300px, 1fr); gap: 52px; }
+
+.cell-by { display: flex; }
+.audit-row { padding: 9px 6px; }
+.audit-row:hover { background: var(--white); }
+
+.watermark {
+  position: absolute; right: -70px; bottom: -90px; width: 520px;
+  opacity: .05; pointer-events: none; will-change: transform, opacity;
+}
+.rail-mark { position: absolute; left: -58px; bottom: -52px; width: 230px; opacity: .07; pointer-events: none; }
+
+.metric { position: relative; overflow: hidden; }
+.metric .edge { position: absolute; left: 0; top: 0; bottom: 0; width: var(--indicator); transform-origin: top; }
+.metric:hover .fig-underline { transform: scaleX(1); }
+/* Sits at 18% and grows to full on hover: the figure looks measured rather
+   than decorated, and the movement rewards attention without demanding it. */
+.fig-underline {
+  display: block; height: 2px; background: var(--border-brand); margin-top: 10px;
+  transform: scaleX(.18); transform-origin: left;
+  transition: transform var(--duration-panel) var(--ease-out);
+}
+
+@media (max-width: 1200px) {
+  .split { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .sheet { padding: 36px 32px 60px; }
+}
+/* Below 1000px the "filed by" and "at" columns are dropped rather than
+   squeezed: a timestamp that wraps to three lines is worse than one absent. */
+@media (max-width: 1000px) {
+  .ledger-head, .ledger-row {
+    grid-template-columns: minmax(120px, 1.6fr) minmax(90px, 1fr) max-content !important;
+  }
+  .cell-by, .cell-by-head, .cell-at, .cell-at-head { display: none !important; }
+}

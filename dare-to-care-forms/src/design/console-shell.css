@@ -1,0 +1,188 @@
+/* The app shell, restyled to the design system.
+ *
+ * WHY THIS IS AN OVERRIDE RATHER THAN A REWRITE
+ * AppShell.tsx carries real behaviour that has nothing to do with how it looks:
+ * the offline banner, admin preview-as-role, the course-site handoff, phone
+ * linking, and sign-out. Replacing its markup to adopt the design kit's rail
+ * would have meant re-implementing all of that and re-testing it. Restyling the
+ * classes it already emits gets the kit's appearance while leaving every one of
+ * those behaviours untouched.
+ *
+ * Loaded after shell.css, so these win on equal specificity.
+ *
+ * The kit's console is two planes: a dark rail that reads as a lifted edge, and
+ * a very pale "paper" stage lit from the top-left. Every value below is a token.
+ */
+
+/* ── The rail ─────────────────────────────────────────────────────────────── */
+
+.shell-sidebar {
+  width: 252px;
+  min-width: 252px;
+  background: var(--surface-inverse);
+  backdrop-filter: none;
+  /* Replaced by the lit edge below — a flat border reads as a boxed sidebar. */
+  border-right: 0;
+  position: relative;
+}
+
+/* Brightest in the middle and fading at both ends, so the rail reads as a
+   plane catching light rather than a rectangle with a line down its side. */
+.shell-sidebar::after {
+  content: "";
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, .02),
+    rgba(255, 255, 255, .18),
+    rgba(255, 255, 255, .02));
+  pointer-events: none;
+}
+
+.shell-brand strong,
+.shell-brand-mini strong {
+  color: var(--text-on-inverse);
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.018em;
+}
+
+.shell-brand span {
+  color: rgba(241, 246, 241, .58);
+}
+
+.shell-role-label {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: rgba(241, 246, 241, .72);
+}
+
+/* ── Rail navigation ──────────────────────────────────────────────────────── */
+/* Square, full-bleed rows rather than floating pills: the rail is a plane, and
+   inset rounded cards on top of it fight that reading. The active marker is a
+   2px bar on the leading edge, which is also what the kit uses. */
+
+.shell-nav {
+  padding: 0;
+  gap: 0;
+}
+
+.shell-nav-item {
+  position: relative;
+  gap: 12px;
+  padding: 0 20px;
+  height: 42px;
+  border-radius: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  color: rgba(241, 246, 241, .74);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+/* No translateX on hover: a row that slides sideways inside a fixed rail
+   reveals the gap it left behind. Weight and ground carry the state instead. */
+.shell-nav-item:hover {
+  background: rgba(255, 255, 255, .035);
+  color: var(--text-on-inverse);
+  transform: none;
+}
+
+.shell-nav-item.active {
+  background: rgba(255, 255, 255, .07);
+  color: var(--text-on-inverse);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.shell-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--green-300);
+}
+
+.shell-nav-item svg { color: rgba(241, 246, 241, .45); }
+.shell-nav-item.active svg,
+.shell-nav-item:hover svg { color: var(--green-300); }
+
+/* ── Rail foot: the signed-in person ──────────────────────────────────────── */
+
+.shell-sidebar-foot { border-top: 1px solid var(--border-inverse); }
+
+.shell-user-info strong { color: var(--text-on-inverse); }
+.shell-user-info span { color: rgba(241, 246, 241, .58); }
+
+.shell-avatar {
+  background: rgba(255, 255, 255, .08);
+  color: var(--green-300);
+  border: 1px solid var(--border-inverse-strong);
+}
+
+.shell-logout {
+  color: rgba(241, 246, 241, .74);
+  background: transparent;
+}
+.shell-logout:hover {
+  background: rgba(255, 255, 255, .06);
+  color: var(--text-on-inverse);
+}
+
+/* ── The stage ────────────────────────────────────────────────────────────── */
+
+.shell-main { background: var(--surface-app); }
+
+.shell-main-inner {
+  position: relative;
+  padding: 44px 56px 72px;
+}
+
+/* Light falls from the top and pools slightly left. Without this a near-white
+   ground reads as flat grey; with it the page has a top edge. Positioned
+   absolutely within the scroll container rather than fixed to the viewport, so
+   it stays put while content scrolls under it. */
+.shell-main-inner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, var(--green-050) 0%, rgba(249, 250, 249, 0) 340px),
+    radial-gradient(900px 420px at 12% -8%, rgba(41, 122, 87, .06), transparent 70%);
+}
+
+/* Keeps real content above the wash. */
+.shell-main-inner > * { position: relative; z-index: 1; }
+
+.shell-footer {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  color: var(--text-quiet);
+}
+
+@media (max-width: 1200px) {
+  .shell-main-inner { padding: 36px 32px 60px; }
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+/* The top bar is the rail's material on a narrow screen, so it takes the same
+   inverse ground rather than staying pale while the drawer behind it is dark. */
+
+.shell-mobile-topbar {
+  background: var(--surface-inverse);
+  border-bottom: 1px solid var(--border-inverse);
+}
+.shell-mobile-topbar strong { color: var(--text-on-inverse); }
+.shell-menu-btn { color: rgba(241, 246, 241, .74); }
+.shell-menu-btn:hover { background: rgba(255, 255, 255, .06); }

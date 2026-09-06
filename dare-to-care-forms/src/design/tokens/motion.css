@@ -1,0 +1,26 @@
+:root{
+--duration-press:80ms;  /* @kind other */
+--duration-hover:120ms; /* @kind other */
+--duration-panel:180ms; /* @kind other */
+--duration-modal:220ms; /* @kind other */
+--duration-fast:var(--duration-hover); /* @kind other */
+--duration-base:var(--duration-panel); /* @kind other */
+--duration-slow:320ms; /* @kind other */
+/* Curves are physical, not linear-ish. --ease-standard moves like something with
+   mass; --ease-spring overshoots a hair on entrance only (never on press). */
+--ease-standard:cubic-bezier(.32,.72,0,1); /* @kind other */
+--ease-out:cubic-bezier(.22,1,.36,1); /* @kind other */
+--ease-in:cubic-bezier(.55,0,1,.45); /* @kind other */
+--ease-spring:cubic-bezier(.34,1.42,.64,1); /* @kind other */
+
+/* Press physics: a control compresses toward its own centre. */
+--press-scale:0.97; /* @kind other */
+--press-scale-lg:0.98; /* @kind other */
+}
+@media (prefers-reduced-motion:reduce){:root{
+--duration-press:0ms; /* @kind other */
+--duration-hover:0ms; /* @kind other */
+--duration-panel:0ms; /* @kind other */
+--duration-modal:0ms; /* @kind other */
+--duration-slow:0ms; /* @kind other */
+}}

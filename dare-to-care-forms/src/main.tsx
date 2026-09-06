@@ -1,5 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+// The design system first: tokens define the custom properties every later
+// stylesheet and component reads, so it has to win the cascade race by being
+// declared before anything that consumes it.
+import './design/dtc-system.css'
+import './design/console.css'
 import './index.css'
 import App from './App.tsx'
 import React from 'react'

@@ -1,4 +1,4 @@
-// Stand-ins for Firestore, Cloud Storage and Microsoft Graph.
+// Stand-ins for Supabase (Postgres + Storage) and Microsoft Graph.
 //
 // These exist so the ingestion pipeline can be run end-to-end without a tenant,
 // a client secret, or a single real document. That matters more here than in
@@ -7,82 +7,166 @@
 // that stops in the wrong place — are all invisible from the outside. A quiet
 // queue and a broken queue look identical until a survey.
 //
-// They are deliberately shallow. Only the handful of Firestore and Storage
-// calls the pipeline actually makes are implemented, and each one that isn't
-// throws rather than quietly returning undefined, so a fake that has drifted
-// behind the real code fails loudly instead of passing a test that means
-// nothing.
+// They are deliberately shallow. Only the handful of calls the pipeline
+// actually makes are implemented, and anything unimplemented throws rather than
+// quietly returning undefined, so a fake that has drifted behind the real code
+// fails loudly instead of passing a test that means nothing.
 
-/** In-memory Firestore, supporting only what queue/poll/roster use. */
-export function fakeDb(seed = {}) {
-  // { collectionName: { docId: data } }
-  const store = structuredClone(seed);
-  let autoId = 0;
+import { fromRow, toRow } from "../src/records.mjs";
 
-  const docApi = (col, id) => ({
-    id,
-    get path() {
-      return `${col}/${id}`;
-    },
-    async get() {
-      const data = store[col]?.[id];
-      return { exists: data !== undefined, id, data: () => data, ref: docApi(col, id) };
-    },
-    async set(value, opts = {}) {
-      store[col] ||= {};
-      store[col][id] = opts.merge ? { ...(store[col][id] || {}), ...value } : value;
-    },
-    async update(value) {
-      store[col] ||= {};
-      store[col][id] = { ...(store[col][id] || {}), ...value };
-    },
-  });
+/**
+ * In-memory Postgres, supporting only what queue/poll/roster/resolve use.
+ *
+ * Rows are stored in their real shape — promoted columns alongside a `data`
+ * jsonb — rather than as flat documents, because the split between the two is
+ * exactly the thing most likely to be got wrong. A fake that stored flat
+ * documents would pass even if the production code wrote `status` into jsonb
+ * where an RLS policy could never see it.
+ */
+export function fakeSupabase(seed = {}) {
+  // { tableName: { id: rowObject } }
+  const store = {};
+  for (const [table, rows] of Object.entries(structuredClone(seed))) {
+    store[table] = {};
+    for (const [id, doc] of Object.entries(rows)) {
+      // Seeds are written as documents, for readability in the tests.
+      store[table][id] = { id, ...toRow(table, doc), ...promotedSeed(table, doc) };
+    }
+  }
 
-  const queryApi = (col, filters = [], limit = null) => ({
-    where(field, op, value) {
-      if (op !== "==") throw new Error(`fakeDb only implements "==", got "${op}"`);
-      return queryApi(col, [...filters, [field, value]], limit);
-    },
-    limit(n) {
-      return queryApi(col, filters, n);
-    },
-    async get() {
-      let docs = Object.entries(store[col] || {})
-        .filter(([, data]) => filters.every(([f, v]) => data?.[f] === v))
-        .map(([id, data]) => ({ id, data: () => data, ref: docApi(col, id) }));
-      if (limit !== null) docs = docs.slice(0, limit);
-      return { empty: docs.length === 0, size: docs.length, docs };
-    },
-  });
+  // clients/users seeds use `name`, which is a real column on both tables.
+  function promotedSeed(table, doc) {
+    if (table === "clients" || table === "users") return { name: doc.name };
+    return {};
+  }
+
+  const rowsOf = (table) => Object.values(store[table] || {});
+
+  function builder(table) {
+    const state = { filters: [], limit: null };
+
+    const api = {
+      select() {
+        return api;
+      },
+      eq(field, value) {
+        state.filters.push([field, value]);
+        return api;
+      },
+      limit(n) {
+        state.limit = n;
+        return api;
+      },
+      then(resolve) {
+        // Awaiting the builder directly runs the query — the same behaviour
+        // supabase-js gives via its thenable builder.
+        return Promise.resolve(run()).then(resolve);
+      },
+      async maybeSingle() {
+        const { data, error } = run();
+        return { data: data[0] ?? null, error };
+      },
+      async single() {
+        const { data, error } = run();
+        if (!error && data.length !== 1) {
+          return { data: null, error: { message: `expected exactly one row, got ${data.length}` } };
+        }
+        return { data: data[0] ?? null, error };
+      },
+      async insert(row) {
+        const rows = Array.isArray(row) ? row : [row];
+        store[table] ||= {};
+        for (const r of rows) {
+          if (r.id in store[table]) {
+            return { data: null, error: { message: `duplicate key: ${r.id}` } };
+          }
+          store[table][r.id] = structuredClone(r);
+        }
+        return { data: rows, error: null };
+      },
+      async upsert(row) {
+        const rows = Array.isArray(row) ? row : [row];
+        store[table] ||= {};
+        for (const r of rows) {
+          store[table][r.id] = { ...(store[table][r.id] || {}), ...structuredClone(r) };
+        }
+        return { data: rows, error: null };
+      },
+      update(patch) {
+        // update() is filtered by a chained .eq(), so the write happens when
+        // the builder is awaited rather than immediately.
+        const write = () => {
+          const { data } = run();
+          for (const row of data) {
+            store[table][row.id] = { ...row, ...structuredClone(patch) };
+          }
+          return { data, error: null };
+        };
+        return {
+          eq(field, value) {
+            state.filters.push([field, value]);
+            return { then: (resolve) => Promise.resolve(write()).then(resolve) };
+          },
+        };
+      },
+    };
+
+    function run() {
+      let rows = rowsOf(table).filter((row) =>
+        state.filters.every(([field, value]) => {
+          // The one operator form the production code uses beyond plain
+          // equality: matching a key inside the jsonb document.
+          const jsonMatch = /^data->>(.+)$/.exec(field);
+          if (jsonMatch) return row.data?.[jsonMatch[1]] === value;
+          return row[field] === value;
+        }),
+      );
+      if (state.limit !== null) rows = rows.slice(0, state.limit);
+      return { data: structuredClone(rows), error: null };
+    }
+
+    return api;
+  }
 
   return {
-    collection(col) {
-      return {
-        ...queryApi(col),
-        doc(id) {
-          return docApi(col, id ?? `auto-${String(++autoId).padStart(4, "0")}`);
-        },
-      };
-    },
-    /** Test-only window onto what was written. */
+    from: builder,
+    storage: fakeStorage(),
+    /** Test-only window onto what was written, as flat documents. */
     _dump: () => structuredClone(store),
-    _collection: (col) => Object.entries(store[col] || {}).map(([id, data]) => ({ id, ...data })),
+    _collection: (table) => rowsOf(table).map((row) => fromRow(table, structuredClone(row))),
   };
 }
 
-/** In-memory Storage bucket. Records saves; never touches a network. */
-export function fakeBucket(name = "dtcapp-24504.firebasestorage.app") {
-  const objects = new Map();
+/** In-memory Storage. Records uploads; never touches a network. */
+export function fakeStorage() {
+  const buckets = new Map();
+
   return {
-    name,
-    file(path) {
+    from(bucket) {
+      if (!buckets.has(bucket)) buckets.set(bucket, new Map());
+      const objects = buckets.get(bucket);
       return {
-        async save(content, opts = {}) {
-          objects.set(path, { bytes: content?.length ?? 0, ...opts });
+        async upload(path, body, opts = {}) {
+          if (objects.has(path) && !opts.upsert) {
+            return { data: null, error: { message: "object already exists" } };
+          }
+          objects.set(path, { bytes: body?.length ?? body?.size ?? 0, ...opts });
+          return { data: { path }, error: null };
+        },
+        async download(path) {
+          if (!objects.has(path)) return { data: null, error: { message: "not found" } };
+          return { data: Buffer.from("pdf-bytes"), error: null };
+        },
+        async createSignedUrl(path) {
+          if (!objects.has(path)) return { data: null, error: { message: "not found" } };
+          return { data: { signedUrl: `https://fake.storage/${bucket}/${path}?token=fake` }, error: null };
         },
       };
     },
-    _objects: () => Object.fromEntries(objects),
+    async listBuckets() {
+      return { data: [...buckets.keys()].map((name) => ({ name })), error: null };
+    },
+    _objects: (bucket) => Object.fromEntries(buckets.get(bucket) || new Map()),
   };
 }
 

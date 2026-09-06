@@ -6,27 +6,28 @@
 // chose — the suggestion is an input to their decision, not a fallback for it.
 
 import { randomUUID } from "node:crypto";
-import { FieldValue } from "firebase-admin/firestore";
 
 import { INBOUND } from "./queue.mjs";
 import { labelFor } from "./classify.mjs";
 import { HttpError } from "./auth.mjs";
+import { BUCKETS } from "./supabase.mjs";
+import { fromRow, toRow, patchRow } from "./records.mjs";
 
 /**
- * @param {{db: FirebaseFirestore.Firestore, bucket: any}} ctx
+ * @param {{sb: import("@supabase/supabase-js").SupabaseClient}} ctx
  * @param {{inboundId: string, subjectType: "client"|"staff", subjectId: string}} input
  * @param {{uid: string, name: string}} actor
  */
 export async function fileInboundDocument(ctx, input, actor) {
-  const { db, bucket } = ctx;
+  const { sb } = ctx;
   const { inboundId, subjectType, subjectId } = input || {};
 
   if (!inboundId || !["client", "staff"].includes(subjectType) || !subjectId) {
     throw new HttpError(400, "inboundId, subjectType and subjectId are required.");
   }
 
-  const inboundRef = db.collection(INBOUND).doc(inboundId);
-  const inbound = (await inboundRef.get()).data();
+  const { data: inboundRow } = await sb.from(INBOUND).select("*").eq("id", inboundId).maybeSingle();
+  const inbound = fromRow(INBOUND, inboundRow);
   if (!inbound) throw new HttpError(404, "That queue entry no longer exists.");
   if (inbound.status !== "pending") throw new HttpError(409, `Already ${inbound.status}.`);
   if (!inbound.sourcePath) {
@@ -34,40 +35,55 @@ export async function fileInboundDocument(ctx, input, actor) {
   }
 
   // Confirm the person exists before writing anything to their file.
-  const subjectSnap = await db
-    .collection(subjectType === "client" ? "clients" : "users")
-    .doc(subjectId)
-    .get();
-  if (!subjectSnap.exists) throw new HttpError(404, "No such person on the roster.");
-  const subjectName = subjectSnap.data().name || "Unknown";
+  const { data: subject } = await sb
+    .from(subjectType === "client" ? "clients" : "users")
+    .select("name")
+    .eq("id", subjectId)
+    .maybeSingle();
+  if (!subject) throw new HttpError(404, "No such person on the roster.");
+  const subjectName = subject.name || "Unknown";
 
-  // Create the record first so the stored object can carry its id, matching the
-  // convention the in-app filing pipeline already uses.
-  const submissionRef = db.collection("submissions").doc();
-  const filedPath = `filed/${subjectType}/${subjectId}/${submissionRef.id}__${Date.now()}.pdf`;
+  // The id is generated here rather than by the database so the stored object
+  // can carry it in its name, matching the convention the in-app filing
+  // pipeline already uses.
+  const submissionId = randomUUID();
+  // Bucket-relative: the bucket IS `filed`, so the old "filed/" prefix is gone.
+  const filedPath = `${subjectType}/${subjectId}/${submissionId}__${Date.now()}.pdf`;
 
   // Copy rather than move. The queue entry keeps pointing at the document
   // exactly as it arrived, so a mis-filing can be traced back to what the
   // reviewer was actually looking at when they decided.
-  const downloadToken = randomUUID();
-  await bucket.file(inbound.sourcePath).copy(bucket.file(filedPath), {
-    metadata: {
+  //
+  // Across buckets, so it is a download-and-upload rather than a server-side
+  // copy: `inbound` and `filed` are separate buckets here, where Firebase had
+  // one bucket with two prefixes.
+  const { data: sourceBlob, error: downloadError } = await sb.storage
+    .from(BUCKETS.inbound)
+    .download(inbound.sourcePath);
+  if (downloadError) {
+    throw new HttpError(409, "The source document could not be read from storage.");
+  }
+
+  const { error: uploadError } = await sb.storage
+    .from(BUCKETS.filed)
+    .upload(filedPath, sourceBlob, {
       contentType: inbound.contentType || "application/pdf",
-      metadata: {
-        firebaseStorageDownloadTokens: downloadToken,
-        filedBy: actor.uid,
-        inboundId,
-      },
-    },
-  });
-  const pdfUrl =
-    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-    `${encodeURIComponent(filedPath)}?alt=media&token=${downloadToken}`;
+      upsert: false,
+    });
+  if (uploadError) {
+    throw new HttpError(500, "The document could not be filed into storage.");
+  }
 
   const now = new Date().toISOString();
   const isClient = subjectType === "client";
 
-  await submissionRef.set({
+  // No permanent URL is stored. The old code minted a Firebase download token
+  // that never expired and lived in the record forever; the app now signs a
+  // short-lived URL from pdfPath at read time, so access is re-decided against
+  // the storage policies on every view.
+  const { error: insertError } = await sb.from("submissions").insert({
+    id: submissionId,
+    ...toRow("submissions", {
     // Not a form filled in the app — an external document filed into the same
     // cabinet, so it appears on the person's file alongside everything else.
     origin: "inbound",
@@ -92,7 +108,6 @@ export async function fileInboundDocument(ctx, input, actor) {
     filedBy: actor.uid,
     filedByName: actor.name,
 
-    pdfUrl,
     pdfPath: filedPath,
     pdfFiledAt: now,
     pdfPending: false,
@@ -104,17 +119,18 @@ export async function fileInboundDocument(ctx, input, actor) {
       fileName: inbound.fileName || null,
     },
     correctionHistory: [],
+    }),
   });
+  if (insertError) throw new HttpError(500, "The filing record could not be created.");
 
   const proposed = inbound.candidates?.[0];
-  await inboundRef.update({
+  await patchRow(sb, INBOUND, inboundId, {
     status: "filed",
     subjectType,
     subjectId,
     subjectName,
-    submissionId: submissionRef.id,
+    submissionId,
     filedPath,
-    filedUrl: pdfUrl,
     resolvedBy: actor.uid,
     resolvedByName: actor.name,
     resolvedAt: now,
@@ -126,19 +142,21 @@ export async function fileInboundDocument(ctx, input, actor) {
     proposedConfidence: inbound.confidence || null,
   });
 
-  await db.collection("audit").add({
-    action: "inbound_filed",
-    target: labelFor(inbound.docType),
-    detail: `Filed to ${subjectName}`,
-    actor: actor.name,
-    role: actor.role || "officeManager",
-    timestamp: now,
-    at: FieldValue.serverTimestamp(),
-    inboundId,
-    submissionId: submissionRef.id,
+  await sb.from("audit").insert({
+    id: randomUUID(),
+    ...toRow("audit", {
+      action: "inbound_filed",
+      target: labelFor(inbound.docType),
+      detail: `Filed to ${subjectName}`,
+      actor: actor.name,
+      role: actor.role || "officeManager",
+      timestamp: now,
+      inboundId,
+      submissionId,
+    }),
   });
 
-  return { submissionId: submissionRef.id, pdfUrl, subjectName };
+  return { submissionId, filedPath, subjectName };
 }
 
 /**
@@ -149,17 +167,17 @@ export async function fileInboundDocument(ctx, input, actor) {
  * nothing" is itself a record worth keeping.
  */
 export async function dismissInboundDocument(ctx, input, actor) {
-  const { db } = ctx;
+  const { sb } = ctx;
   const { inboundId, reason } = input || {};
   if (!inboundId) throw new HttpError(400, "inboundId is required.");
 
-  const ref = db.collection(INBOUND).doc(inboundId);
-  const entry = (await ref.get()).data();
+  const { data: row } = await sb.from(INBOUND).select("*").eq("id", inboundId).maybeSingle();
+  const entry = fromRow(INBOUND, row);
   if (!entry) throw new HttpError(404, "That queue entry no longer exists.");
   if (entry.status !== "pending") throw new HttpError(409, `Already ${entry.status}.`);
 
   const now = new Date().toISOString();
-  await ref.update({
+  await patchRow(sb, INBOUND, inboundId, {
     status: "dismissed",
     dismissReason: reason || null,
     resolvedBy: actor.uid,
@@ -168,15 +186,17 @@ export async function dismissInboundDocument(ctx, input, actor) {
     resolutionKind: "dismissed",
   });
 
-  await db.collection("audit").add({
-    action: "inbound_dismissed",
-    target: entry.fileName || "Document",
-    detail: reason || "",
-    actor: actor.name,
-    role: actor.role || "officeManager",
-    timestamp: now,
-    at: FieldValue.serverTimestamp(),
-    inboundId,
+  await sb.from("audit").insert({
+    id: randomUUID(),
+    ...toRow("audit", {
+      action: "inbound_dismissed",
+      target: entry.fileName || "Document",
+      detail: reason || "",
+      actor: actor.name,
+      role: actor.role || "officeManager",
+      timestamp: now,
+      inboundId,
+    }),
   });
 
   return { ok: true };

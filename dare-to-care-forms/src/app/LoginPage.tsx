@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth, type Role } from "./AuthContext";
-import { signInWithPhoneNumber, RecaptchaVerifier, type ConfirmationResult } from "firebase/auth";
-import { auth, db } from "../config/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { supabase } from "../config/supabase";
+// @ts-ignore - JS module without types
+import { fromRow } from "../lib/records.js";
 
 const homeByRole: Record<Role, string> = {
   admin: "/admin",
@@ -27,26 +27,29 @@ export default function LoginPage() {
   // Phone Auth State
   const [phone, setPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  // Supabase's OTP flow is stateless between the two steps — the code is
+  // verified against the phone number rather than against a handle returned by
+  // the send call — so this tracks only whether a code is outstanding.
+  const [codeSent, setCodeSent] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(location.state?.message || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    getDoc(doc(db, "metadata", "setup")).then((snap) => {
-      if (!snap.exists()) {
-        navigate('/setup');
-      }
-    }).catch(console.error);
-    
-    // Initialize recaptcha when on phone login
-    if (loginMethod === "phone" && !(window as any).recaptchaVerifier) {
-      (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible',
+    // Deliberately readable signed-out: this decides whether to send a brand
+    // new install to first-run setup, before anyone can be logged in.
+    supabase
+      .from("app_metadata")
+      .select("id")
+      .eq("id", "setup")
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) navigate('/setup');
       });
-    }
-  }, [navigate, loginMethod]);
+    // No reCAPTCHA setup: that was a Firebase phone-auth requirement.
+    // Supabase rate-limits OTP sends server-side instead.
+  }, [navigate]);
 
   const submitEmail = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -73,19 +76,12 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const appVerifier = (window as any).recaptchaVerifier;
       const formattedPhone = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`;
-      const result = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-      setConfirmationResult(result);
+      const { error: otpError } = await supabase.auth.signInWithOtp({ phone: formattedPhone });
+      if (otpError) throw new Error(otpError.message);
+      setCodeSent(true);
     } catch (err: any) {
       setError(err.message || "Failed to send verification code.");
-      if ((window as any).recaptchaVerifier) {
-         try {
-           (window as any).recaptchaVerifier.render().then((widgetId: any) => {
-             (window as any).grecaptcha.reset(widgetId);
-           });
-         } catch(e) {}
-      }
     } finally {
       setIsSubmitting(false);
     }
@@ -96,16 +92,31 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await confirmationResult!.confirm(verificationCode);
-      const userDoc = await getDoc(doc(db, "users", result.user.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
+      const formattedPhone = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`;
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        phone: formattedPhone,
+        token: verificationCode,
+        type: 'sms',
+      });
+      if (verifyError) throw new Error(verifyError.message);
+
+      const { data: row } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", data.user!.id)
+        .maybeSingle();
+
+      if (row) {
+        const userData = fromRow("users", row);
         if (userData.mustChangePassword) {
           navigate('/change-password', { replace: true });
         } else {
           navigate(homeByRole[userData.role as Role], { replace: true });
         }
       } else {
+        // A verified phone with no profile cannot be placed in the app; don't
+        // leave them half-authenticated on the login screen.
+        await supabase.auth.signOut();
         setError("User profile not found in database.");
       }
     } catch (err: any) {
@@ -140,7 +151,7 @@ export default function LoginPage() {
             <button 
               type="button"
               style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', background: loginMethod === 'email' ? 'var(--bg-elevated)' : 'transparent', fontWeight: loginMethod === 'email' ? 600 : 400 }}
-              onClick={() => { setLoginMethod('email'); setConfirmationResult(null); setError(null); }}
+              onClick={() => { setLoginMethod('email'); setCodeSent(false); setError(null); }}
             >
               Email
             </button>
@@ -185,8 +196,8 @@ export default function LoginPage() {
               </button>
             </form>
           ) : (
-            <form className="login-form" onSubmit={confirmationResult ? verifyPhoneCode : sendPhoneCode}>
-              {!confirmationResult ? (
+            <form className="login-form" onSubmit={codeSent ? verifyPhoneCode : sendPhoneCode}>
+              {!codeSent ? (
                 <>
                   <label className="login-field">
                     <span>Phone Number</span>
@@ -198,7 +209,6 @@ export default function LoginPage() {
                       required 
                     />
                   </label>
-                  <div id="recaptcha-container"></div>
                   <button className="login-submit" type="submit" disabled={isSubmitting || !phone}>
                     {isSubmitting ? "Sending..." : "Send Verification Code"}
                   </button>
@@ -218,7 +228,7 @@ export default function LoginPage() {
                   <button className="login-submit" type="submit" disabled={isSubmitting || !verificationCode}>
                     {isSubmitting ? "Verifying..." : "Sign in"}
                   </button>
-                  <button type="button" className="dbtn dbtn-ghost" style={{ width: '100%', marginTop: '8px' }} onClick={() => setConfirmationResult(null)}>
+                  <button type="button" className="dbtn dbtn-ghost" style={{ width: '100%', marginTop: '8px' }} onClick={() => setCodeSent(false)}>
                     Use a different number
                   </button>
                 </>

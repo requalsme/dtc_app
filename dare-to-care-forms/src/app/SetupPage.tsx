@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { setDoc, doc, getDoc } from "firebase/firestore";
-import { auth, db } from "../config/firebase";
+import { supabase } from "../config/supabase";
+// @ts-ignore - JS module without types
+import { put } from "../lib/db.js";
 
 export default function SetupPage() {
   const [loading, setLoading] = useState(true);
@@ -21,8 +21,14 @@ export default function SetupPage() {
   useEffect(() => {
     const checkSetupStatus = async () => {
       try {
-        const setupSnap = await getDoc(doc(db, "metadata", "setup"));
-        if (setupSnap.exists()) {
+        // Readable signed-out, by design — the app has to answer "has anyone
+        // set this up yet?" before anyone can possibly be logged in.
+        const { data } = await supabase
+          .from("app_metadata")
+          .select("id")
+          .eq("id", "setup")
+          .maybeSingle();
+        if (data) {
           // Setup is complete, redirect to login
           navigate('/login');
         } else {
@@ -57,14 +63,22 @@ export default function SetupPage() {
     setError("");
 
     try {
-      // 1. Create the user in Firebase Auth
-      const userCred = await createUserWithEmailAndPassword(auth, email, password);
-      
+      // 1. Create the account. This is the one place a browser signup is
+      //    correct: there is by definition no admin yet to do it server-side.
+      const { data: signUp, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      if (signUpError) throw new Error(signUpError.message);
+      if (!signUp.user) throw new Error("Could not create the account.");
+
       // 2. Determine initials for avatar
       const initials = name.split(' ').map(s => s[0]).join('').toUpperCase().slice(0, 2) || '?';
-      
-      // 3. Create the user document in Firestore with the exact Auth UID
-      await setDoc(doc(db, "users", userCred.user.uid), {
+
+      // 3. Fill in the profile. The row already exists — the on_auth_user_created
+      //    trigger made one the moment the account did — so this completes it
+      //    rather than racing to create it.
+      await put("users", signUp.user.id, {
         name: name.trim(),
         email: email.toLowerCase(),
         initials,
@@ -76,12 +90,12 @@ export default function SetupPage() {
       });
 
       // 4. Mark setup as complete
-      await setDoc(doc(db, "metadata", "setup"), {
+      await put("app_metadata", "setup", {
         completed: true,
         completedAt: new Date().toISOString()
       });
 
-      // 5. Firebase automatically signs them in! 
+      // 5. signUp() leaves them signed in, same as before.
       setStep("done");
       
       // Navigate straight to the admin dashboard after a brief delay

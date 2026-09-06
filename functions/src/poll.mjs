@@ -22,7 +22,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 const FIRST_RUN_DAYS = 30;
 
 /**
- * @param {{db: FirebaseFirestore.Firestore, bucket: any}} ctx
+ * @param {{sb: import("@supabase/supabase-js").SupabaseClient}} ctx
  * @param {{tenantId: string, clientId: string, clientSecret: string, mailbox: string}} cfg
  * @param {{budgetMs?: number, maxMessages?: number, graph?: object}} [opts]
  *
@@ -32,7 +32,7 @@ const FIRST_RUN_DAYS = 30;
  * a tenant, a client secret and real PHI to exercise. See `dryrun.mjs`.
  */
 export async function pollMailbox(ctx, cfg, opts = {}) {
-  const { db } = ctx;
+  const { sb } = ctx;
   const { budgetMs = 8000, maxMessages = 25, graph = realGraph } = opts;
   const { getToken, listMessagesSince, listAttachments } = graph;
   const startedAt = Date.now();
@@ -44,13 +44,20 @@ export async function pollMailbox(ctx, cfg, opts = {}) {
     throw new Error("DTC_MAILBOX is not set; the poll has nothing to watch.");
   }
 
-  const stateRef = db.collection("metadata").doc("ingestion");
-  const state = (await stateRef.get()).data() || {};
+  // The watermark. Closed to every browser by RLS — only this service-role
+  // client can move it, because moving it forwards silently skips unread
+  // referrals.
+  const { data: stateRow } = await sb
+    .from("app_metadata")
+    .select("data")
+    .eq("id", "ingestion")
+    .maybeSingle();
+  const state = stateRow?.data || {};
   const since =
     state.outlookWatermark || new Date(Date.now() - FIRST_RUN_DAYS * 864e5).toISOString();
 
   const token = await getToken(cfg);
-  const roster = await loadRoster(db);
+  const roster = await loadRoster(sb);
   // Inbox only. Graph's `/messages` covers the whole mailbox — Sent Items,
   // Deleted Items, Clutter — so an unscoped read would queue every attachment
   // the agency sent *out* as though it had just arrived, and file DTC's own
@@ -110,8 +117,13 @@ export async function pollMailbox(ctx, cfg, opts = {}) {
     }
   }
 
-  await stateRef.set(
-    {
+  // Merged onto whatever else the ingestion document holds, matching the
+  // `{ merge: true }` this replaces.
+  await sb.from("app_metadata").upsert({
+    id: "ingestion",
+    updated_at: new Date().toISOString(),
+    data: {
+      ...state,
       outlookWatermark: watermark,
       lastPollAt: new Date().toISOString(),
       lastQueued: queued,
@@ -119,8 +131,7 @@ export async function pollMailbox(ctx, cfg, opts = {}) {
       lastStoppedEarly: stoppedEarly,
       lastDurationMs: spent(),
     },
-    { merge: true },
-  );
+  });
 
   return { queued, processed, watermark, stoppedEarly, durationMs: spent() };
 }

@@ -4,10 +4,12 @@
   "type": "module",
   "description": "Dare to Care — forms, filing and compliance. The React app lives in dare-to-care-forms; this root package exists so Netlify can bundle the serverless functions in netlify/functions.",
   "scripts": {
-    "test": "node --test functions/test/",
-    "build": "cd dare-to-care-forms && npm install && npm run build"
+    "test": "node --test functions/test/*.test.mjs",
+    "build": "cd dare-to-care-forms && npm install && npm run build",
+    "migrate": "node migration/run-all.mjs"
   },
   "dependencies": {
-    "firebase-admin": "^13.0.2"
+    "@supabase/supabase-js": "^2.47.10",
+    "postgres": "^3.4.5"
   }
 }

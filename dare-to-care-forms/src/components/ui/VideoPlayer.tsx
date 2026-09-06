@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { ref, getDownloadURL } from 'firebase/storage';
-import { storage } from '../../config/firebase';
+// @ts-ignore - JS module without types
+import { signedUrl } from '../../lib/db.js';
+import { BUCKETS } from '../../config/supabase';
 import './VideoPlayer.css'; // Will create a quick stylesheet for styling
 
 interface VideoPlayerProps {
@@ -19,8 +20,13 @@ export function VideoPlayer({ storagePath, title, onEnded }: VideoPlayerProps) {
     async function fetchVideo() {
       try {
         setLoading(true);
-        // We get a signed download URL directly from Firebase Storage without a backend!
-        const url = await getDownloadURL(ref(storage, storagePath));
+        // A signed URL straight from Storage, no backend needed. Unlike the
+        // Firebase download URL this replaces, it expires — two hours, so a
+        // long video cannot die mid-playback — and it is only issued if the
+        // storage policy says this viewer may read the object.
+        const path = storagePath.replace(/^courses\//, '');
+        const url = await signedUrl(BUCKETS.courses, path, 7200);
+        if (!url) throw new Error('No access to this video');
         setVideoUrl(url);
       } catch (err: any) {
         console.error("Error fetching video:", err);

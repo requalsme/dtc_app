@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { pollMailbox } from "./src/poll.mjs";
-import { fakeDb, fakeBucket, fakeGraph, message } from "./test/fakes.mjs";
+import { fakeSupabase, fakeGraph, message } from "./test/fakes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migration = join(here, "..", "migration");
@@ -131,23 +131,30 @@ function bar(label, n, total, width = 28) {
 
 async function main() {
   const { clients, users, counts } = seedFromMigration();
-  const db = fakeDb({ clients, users });
-  const bucket = fakeBucket();
+  // The stand-in mailbox is dated in the past. Without a watermark the poll
+  // only looks back FIRST_RUN_DAYS from today, so once the calendar moved past
+  // that window the dry run silently reported an empty queue — which is the
+  // exact failure mode this script exists to make visible.
+  const sb = fakeSupabase({
+    clients,
+    users,
+    app_metadata: { ingestion: { outlookWatermark: "2026-01-01T00:00:00Z" } },
+  });
 
   console.log("\n  DTC ingestion — dry run");
   console.log("  " + "─".repeat(70));
   console.log(`  Roster:  ${counts.clients} clients, ${counts.staff} staff (from migration/*.json)`);
   console.log(`  Mailbox: ${MAILBOX.length} stand-in messages`);
-  console.log("  Nothing is written. No Firebase, no Graph, no credentials.\n");
+  console.log("  Nothing is written. No Supabase, no Graph, no credentials.\n");
 
   const result = await pollMailbox(
-    { db, bucket },
+    { sb },
     { tenantId: "dry", clientId: "dry", clientSecret: "dry", mailbox: "dryrun@example.invalid" },
     // Generous budget: this is about judgement, not about the free-tier clock.
     { graph: fakeGraph(MAILBOX), budgetMs: 60_000, maxMessages: 100 },
   );
 
-  const entries = db._collection("inbound");
+  const entries = sb._collection("inbound");
   const grouped = { confident: [], weak: [], ambiguous: [], unmatched: [] };
   for (const e of entries) grouped[e.confidence]?.push(e);
 
@@ -179,7 +186,7 @@ async function main() {
   console.log(`\n  ${total} queued from ${result.processed} messages in ${result.durationMs}ms`);
   console.log(`  ${grouped.confident.length} need a confirming click; ${needsThought} need a person to think.`);
   console.log(`  Watermark would advance to ${result.watermark}`);
-  console.log(`  Stored ${Object.keys(bucket._objects()).length} source documents (in memory).\n`);
+  console.log(`  Stored ${Object.keys(sb.storage._objects("inbound")).length} source documents (in memory).\n`);
 
   // The attachments that were correctly ignored are worth naming: every one of
   // them would otherwise have cost a reviewer a decision for nothing.

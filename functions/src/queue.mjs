@@ -11,12 +11,11 @@ import { randomUUID } from "node:crypto";
 
 import { classify } from "./classify.mjs";
 import { matchName } from "./matcher.mjs";
+import { BUCKETS } from "./supabase.mjs";
+import { toRow } from "./records.mjs";
 
-/** Firestore collection holding documents awaiting review. */
+/** Table holding documents awaiting review. */
 export const INBOUND = "inbound";
-
-/** Storage prefix for source documents that have not been filed yet. */
-export const INBOUND_PREFIX = "inbound";
 
 /**
  * Add one inbound document to the review queue.
@@ -26,8 +25,7 @@ export const INBOUND_PREFIX = "inbound";
  * who has already resolved an entry is never shown it again.
  *
  * @param {object} ctx
- * @param {FirebaseFirestore.Firestore} ctx.db
- * @param {import("firebase-admin/storage").Bucket} ctx.bucket
+ * @param {import("@supabase/supabase-js").SupabaseClient} ctx.sb
  * @param {Array} ctx.roster
  * @param {object} item
  * @param {"email"|"goformz"|"certifications"|"manual"} item.source
@@ -42,19 +40,24 @@ export const INBOUND_PREFIX = "inbound";
  * @param {string} [item.nameHint]      text to match on, if not the subject
  */
 export async function enqueue(ctx, item) {
-  const { db, bucket, roster } = ctx;
+  const { sb, roster } = ctx;
 
-  const existing = await db
-    .collection(INBOUND)
-    .where("dedupeKey", "==", item.dedupeKey)
-    .limit(1)
-    .get();
+  // dedupeKey lives inside the jsonb document rather than as a promoted column,
+  // so this filters on the JSON field directly. It is an equality match on one
+  // key, which is what the Firestore `where` did.
+  const { data: matches } = await sb
+    .from(INBOUND)
+    .select("*")
+    .eq("data->>dedupeKey", item.dedupeKey)
+    .limit(1);
+
+  const existing = matches?.[0] || null;
 
   // Already dealt with by a person — leave it alone. Re-queueing a resolved
   // document would ask someone to make the same decision twice, and the second
   // answer might not match the first.
-  if (!existing.empty && existing.docs[0].data().status !== "pending") {
-    return { id: existing.docs[0].id, skipped: "already resolved" };
+  if (existing && existing.status !== "pending") {
+    return { id: existing.id, skipped: "already resolved" };
   }
 
   const { docType, expect, label, matchedOn } = classify({
@@ -69,33 +72,28 @@ export async function enqueue(ctx, item) {
   const nameText = item.nameHint ?? [item.fileName, item.subject].filter(Boolean).join(" ");
   const match = matchName(nameText, roster, { expect });
 
-  const ref = existing.empty ? db.collection(INBOUND).doc() : existing.docs[0].ref;
+  const entryId = existing?.id || randomUUID();
 
   // Store the source document under the queue entry's own id, so the object and
   // the record can never drift apart.
+  //
+  // Bucket-relative: `inbound` is its own bucket now, where Firebase used one
+  // bucket with an "inbound/" prefix.
+  //
+  // No download token and no stored URL. Firebase needed one because objects
+  // written by the admin SDK were otherwise unreachable from the browser SDK;
+  // here the `inbound read` storage policy grants staff access directly, and
+  // the reviewer's own session signs a short-lived URL when they open it.
   let sourcePath = null;
-  let sourceUrl = null;
   if (item.content) {
-    sourcePath = `${INBOUND_PREFIX}/${ref.id}/${sanitize(item.fileName)}`;
-    // Objects written by the admin SDK have no download token, and without one
-    // the browser SDK's getDownloadURL can't produce a link. Minting the token
-    // here means the reviewer can open the document without the app needing
-    // storage read permissions it otherwise wouldn't use.
-    const token = randomUUID();
-    await bucket.file(sourcePath).save(item.content, {
-      contentType: item.contentType || "application/octet-stream",
-      resumable: false,
-      metadata: {
-        metadata: {
-          firebaseStorageDownloadTokens: token,
-          source: item.source,
-          dedupeKey: item.dedupeKey,
-        },
-      },
-    });
-    sourceUrl =
-      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-      `${encodeURIComponent(sourcePath)}?alt=media&token=${token}`;
+    sourcePath = `${entryId}/${sanitize(item.fileName)}`;
+    const { error } = await sb.storage
+      .from(BUCKETS.inbound)
+      .upload(sourcePath, item.content, {
+        contentType: item.contentType || "application/octet-stream",
+        upsert: true,
+      });
+    if (error) throw new Error(`Could not store the source document: ${error.message}`);
   }
 
   const record = {
@@ -117,13 +115,16 @@ export async function enqueue(ctx, item) {
     candidates: match.candidates,
 
     sourcePath,
-    sourceUrl,
     status: "pending",
     queuedAt: new Date().toISOString(),
   };
 
-  await ref.set(record, { merge: true });
-  return { id: ref.id, confidence: match.confidence, docType };
+  // Upsert on the entry id: re-running a poll updates the pending entry in
+  // place rather than queueing the same document twice.
+  const { error } = await sb.from(INBOUND).upsert({ id: entryId, ...toRow(INBOUND, record) });
+  if (error) throw new Error(`Could not queue the document: ${error.message}`);
+
+  return { id: entryId, confidence: match.confidence, docType };
 }
 
 // Storage object names are not a place to trust an external filename.

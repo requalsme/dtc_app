@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "../config/firebase";
+import { supabase } from "../config/supabase";
+// @ts-ignore - JS module without types
+import { fromRow } from "../lib/records.js";
 // @ts-ignore - JS module without types
 import { setStoredSession, clearStoredSession } from "./auth-storage.js";
 // @ts-ignore - JS module without types
@@ -25,8 +25,9 @@ export interface AppUser {
   // Separate from `role` on purpose. `role` is someone's real job — Raina's is
   // "caregiver," because that is genuinely the work Rushane assigns her. This
   // is a second, independent grant: does this person ALSO have owner-level
-  // access to the dev portal. One person can be both. Only ever set by hand in
-  // Firestore, never through the app, so it can't become self-service.
+  // access to the dev portal. One person can be both. Never self-service: the
+  // guard_dev_access trigger in Postgres rejects a self-write that changes this
+  // field, so only an existing admin or dev can hand it out.
   devAccess?: boolean;
 }
 
@@ -60,24 +61,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [previewRole, setPreviewRole] = useState<Role | null>(null);
   const [isDevMode, setIsDevMode] = useState(false);
 
+  // One place that turns an authenticated session into a profile, so the
+  // listener and both login paths cannot drift apart in what they consider a
+  // valid signed-in user.
+  const loadProfile = async (userId: string): Promise<AppUser | null> => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return fromRow("users", data) as AppUser;
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data() as Omit<AppUser, "id">;
-            const appUser = { ...data, id: firebaseUser.uid };
-            setUser(appUser);
-            // Mirror the profile into local storage so non-React modules (schemas/store
-            // `DTC.currentUser`) can resolve the signed-in caregiver reliably.
-            setStoredSession({ user: appUser });
-          } else {
-            setUser(null);
-          }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setUser(null);
+    // Supabase fires the initial session through this same subscription, so
+    // there is no separate "get the current session" path to keep in step.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const appUser = await loadProfile(session.user.id);
+        setUser(appUser);
+        if (appUser) {
+          // Mirror the profile into local storage so non-React modules (schemas/store
+          // `DTC.currentUser`) can resolve the signed-in caregiver reliably.
+          setStoredSession({ user: appUser });
         }
       } else {
         setUser(null);
@@ -85,47 +92,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
 
-    return unsubscribe;
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = async (email: string, password: string) => {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
-    
-    if (userDoc.exists()) {
-      const data = userDoc.data() as Omit<AppUser, "id">;
-      const appUser = { ...data, id: userCredential.user.uid };
-      setUser(appUser);
-      setStoredSession({ user: appUser });
-      return appUser;
-    } else {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+
+    const appUser = await loadProfile(data.user.id);
+    if (!appUser) {
+      // An auth account with no profile row cannot be placed in the app, so it
+      // is signed back out rather than left half-authenticated.
+      await supabase.auth.signOut();
       throw new Error("User profile not found in database.");
     }
+    setUser(appUser);
+    setStoredSession({ user: appUser });
+    return appUser;
   };
 
   // Same credential check as login(), through a separate screen — this is the
   // "pop up a different login screen" entry Raina asked for, not a role
   // switch inside the app. It fails closed: if devAccess isn't set, the
-  // session that Firebase just created is torn down immediately rather than
+  // session that was just created is torn down immediately rather than
   // left signed in with nowhere to go. Whatever this account's real role is
   // (caregiver, office manager, whatever) is untouched by any of this.
   const devLogin = async (email: string, password: string) => {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const userDoc = await getDoc(doc(db, "users", userCredential.user.uid));
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error("Account not recognized.");
 
-    if (!userDoc.exists()) {
-      await signOut(auth);
-      throw new Error("Account not recognized.");
-    }
-    const data = userDoc.data() as Omit<AppUser, "id">;
-    if (!data.devAccess) {
-      await signOut(auth);
+    const appUser = await loadProfile(data.user.id);
+    if (!appUser || !appUser.devAccess) {
+      await supabase.auth.signOut();
       // Deliberately the same wording an unrecognized account would get. A
       // valid password on a non-dev account shouldn't confirm to whoever's
       // typing it that dev access is the specific thing missing.
       throw new Error("Account not recognized.");
     }
-    const appUser = { ...data, id: userCredential.user.uid };
     setUser(appUser);
     setStoredSession({ user: appUser });
     setIsDevMode(true);
@@ -135,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const exitDevMode = () => setIsDevMode(false);
 
   const logout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     clearStoredSession();
     setPreviewRole(null);
     DTCStore.setPreviewMode(false);
@@ -145,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // This is the actual safety boundary behind the "changes won't affect real
   // data" banner — see the matching comment on assertWritable() in store.js.
-  // Every Store write method checks this flag before touching Firestore, so
+  // Every Store write method checks this flag before touching the database, so
   // the promise in the UI is enforced in one place rather than trusted at
   // each call site.
   const enterPreview = (role: Role) => {

@@ -1052,6 +1052,13 @@ function UsersPage({ onToast }) {
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   style={{ flex: 1 }}
+                  // Without this the browser treats the box as a sign-in field and
+                  // fills in the ADMIN's own saved password. The dialog then shows
+                  // that value under "share with user" and offers to copy it, so an
+                  // admin could hand a caregiver their personal password having only
+                  // ever seen dots. "new-password" says this is a password being set.
+                  autoComplete="new-password"
+                  name="dtc-temp-password"
                 />
                 <button
                   className="dbtn dbtn-ghost"

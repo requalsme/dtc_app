@@ -52,36 +52,60 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <h2>Change Your Password</h2>
-        <p>Welcome, {user.name}. You must change your temporary password before continuing.</p>
-        
-        {error && <div className="login-error">{error}</div>}
-        
-        <form onSubmit={handleSubmit} className="login-form">
-          <label>
-            New Password
-            <input 
-              type="password" 
-              value={newPassword} 
-              onChange={e => setNewPassword(e.target.value)} 
-              required 
-              minLength={10}
-            />
-          </label>
-          <label>
-            Confirm New Password
-            <input 
-              type="password" 
-              value={confirmPassword} 
-              onChange={e => setConfirmPassword(e.target.value)} 
-              required 
-              minLength={10}
-            />
-          </label>
-          <button type="submit" className="login-btn">Update Password</button>
-        </form>
+    // Class names here must match the ones the stylesheet actually defines.
+    // This screen previously used login-container / login-card / login-btn,
+    // none of which exist, so every rule silently no-opped and the page
+    // rendered as unstyled browser HTML. A misspelt CSS class is not an error,
+    // it is simply nothing - which is why it survived until the first person
+    // signed in and was sent straight here.
+    <div className="login-page">
+      <div className="login-stage" style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <section className="login-intro" style={{ textAlign: 'center', marginBottom: '2rem' }}>
+          <div className="login-brand-row" style={{ justifyContent: 'center' }}>
+            <img src="/logo.png" alt="Dare to Care" className="login-logo-mark" />
+            <div style={{ textAlign: 'left' }}>
+              <strong>Dare to Care</strong>
+              <span>Forms Platform</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="login-panel" style={{ width: '100%', maxWidth: '400px', padding: '2rem' }}>
+          <div className="login-panel-head">
+            <div>
+              <h2>Choose a password</h2>
+              <p>Welcome, {user.name}. Set your own password before continuing.</p>
+            </div>
+          </div>
+
+          {error && <div className="login-error">{error}</div>}
+
+          <form onSubmit={handleSubmit} className="login-form">
+            <label className="login-field">
+              <span>New password</span>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                required
+                minLength={10}
+                autoComplete="new-password"
+              />
+            </label>
+            <label className="login-field">
+              <span>Confirm new password</span>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                required
+                minLength={10}
+                autoComplete="new-password"
+              />
+            </label>
+            <button type="submit" className="login-submit">Update password</button>
+          </form>
+        </section>
       </div>
     </div>
   );

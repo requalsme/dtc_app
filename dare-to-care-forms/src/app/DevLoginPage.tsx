@@ -32,8 +32,11 @@ export default function DevLoginPage() {
 
   return (
     <div
-      className="login-page"
-      style={{ background: "#0f1a13", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}
+      style={{
+        background: "var(--surface-inverse)", minHeight: "100vh",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "var(--font-ui)",
+      }}
     >
       <div style={{ width: "100%", maxWidth: 400, padding: "0 1rem" }}>
         <button
@@ -53,7 +56,7 @@ export default function DevLoginPage() {
 
         <section
           style={{
-            background: "#16241a", border: "1px solid #2a3f30", borderRadius: 14,
+            background: "rgba(255,255,255,.04)", border: "1px solid var(--border-inverse-strong)", borderRadius: "var(--radius-modal)",
             padding: "2rem", boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
           }}
         >
@@ -61,7 +64,7 @@ export default function DevLoginPage() {
             <img src="/logo.png" alt="Dare to Care" style={{ width: 34, height: 34, borderRadius: 8 }} />
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <strong style={{ color: "#f0efe9" }}>Dare to Care</strong>
+                <strong style={{ color: "var(--text-on-inverse)" }}>Dare to Care</strong>
                 <span style={{
                   fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
                   color: "#e6b552", border: "1px solid #6b551f", background: "#2e2a1f",
@@ -77,7 +80,7 @@ export default function DevLoginPage() {
           {error && (
             <div style={{
               background: "#2e1f1f", border: "1px solid #6b2a2a", color: "#f08a8a",
-              borderRadius: 8, padding: "0.6rem 0.8rem", fontSize: "0.85rem", marginBottom: "1rem",
+              borderRadius: "var(--radius-input)", padding: "0.6rem 0.8rem", fontSize: "0.85rem", marginBottom: "1rem",
             }}>
               {error}
             </div>
@@ -89,7 +92,7 @@ export default function DevLoginPage() {
               <input
                 type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email" required
-                style={{ background: "#0f1a13", border: "1px solid #2a3f30", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f0efe9" }}
+                style={{ background: "rgba(0,0,0,.28)", border: "1px solid var(--border-inverse-strong)", borderRadius: "var(--radius-input)", padding: "0.6rem 0.75rem", color: "var(--text-on-inverse)", font: "inherit" }}
               />
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -97,13 +100,13 @@ export default function DevLoginPage() {
               <input
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password" required
-                style={{ background: "#0f1a13", border: "1px solid #2a3f30", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f0efe9" }}
+                style={{ background: "rgba(0,0,0,.28)", border: "1px solid var(--border-inverse-strong)", borderRadius: "var(--radius-input)", padding: "0.6rem 0.75rem", color: "var(--text-on-inverse)", font: "inherit" }}
               />
             </label>
             <button
               type="submit" disabled={isSubmitting}
               style={{
-                background: "#e6b552", color: "#1c1c1a", border: "none", borderRadius: 8,
+                background: "#e6b552", color: "#1c1c1a", border: "none", borderRadius: "var(--radius-cta)",
                 padding: "0.7rem", fontWeight: 700, cursor: "pointer", marginTop: "0.25rem",
               }}
             >

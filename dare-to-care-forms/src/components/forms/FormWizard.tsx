@@ -213,7 +213,7 @@ function ReviewStep({ schema, values, score, onEdit }: any) {
         return (
           <div className="reviewsec" key={sec.id}>
             <div className="rs-h"><span className="t">{sec.title}</span><button className="edit" onClick={() => onEdit(i)}>Edit</button></div>
-            <div className="card">
+            <div style={{ borderRadius: "var(--radius-panel)", background: "var(--surface-card)", border: "1px solid var(--border-subtle)", overflow: "hidden" }}>
               {visible.map((f: any) => {
                 const dv = displayValue(f, values[f.id]);
                 if (f.type === "signature") {
@@ -291,7 +291,7 @@ function WizardIntro({ schema, needsClient, client, setClient, isPreview }: any)
         </div>
       </div>
       {isPreview && needsClient ? (
-        <div className="card" style={{ background: "var(--surface-3)", textAlign: "center", fontSize: 13, color: "var(--ink-2)" }}>
+        <div style={{ padding: "16px 18px", borderRadius: "var(--radius-panel)", background: "var(--surface-sunken)", border: "1px solid var(--border-subtle)", textAlign: "center", fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
           Preview mode — using a placeholder client so you can see the full form. Real submissions will require selecting an actual client.
         </div>
       ) : needsClient ? (
@@ -311,7 +311,7 @@ function WizardIntro({ schema, needsClient, client, setClient, isPreview }: any)
           ))}
         </div>
       ) : (
-        <div className="card" style={{ background: "var(--surface-3)", textAlign: "center", fontSize: 13, color: "var(--ink-2)" }}>
+        <div style={{ padding: "16px 18px", borderRadius: "var(--radius-panel)", background: "var(--surface-sunken)", border: "1px solid var(--border-subtle)", textAlign: "center", fontSize: 13.5, color: "var(--text-secondary)", lineHeight: 1.6 }}>
           This form is about you — no client needs to be selected.
         </div>
       )}

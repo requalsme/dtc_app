@@ -5,9 +5,12 @@
 // checklist SYSTEM-MAP.html already wrote out by hand — this just makes those
 // same checks live instead of something you re-derive from memory. Deleted
 // Items is real too, since it's the direct pair of the soft-delete this was
-// built alongside. Templates and Users & Roles are scaffolded: they read and
-// show real data, but editing a template's fields and changing someone's role
-// from here rather than through updateUser directly is still to come.
+// built alongside. Templates is read-only; editing a form's fields happens in
+// the admin form builder rather than here.
+//
+// The rail stays dark and gold-marked on purpose. This portal can permanently
+// destroy records and hand out its own access, so it should never be mistaken
+// at a glance for the ordinary console.
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../app/AuthContext";
@@ -15,6 +18,11 @@ import { useAuth } from "../../app/AuthContext";
 import { DTCStore as Store } from "../../components/store.js";
 // @ts-ignore
 import { DTC } from "../../components/schemas.js";
+import {
+  Icon, Button, Stamp, Select, Input, Textarea,
+  RecordRow, EmptyState, Text, Dialog,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
 
 type Page = "health" | "deleted" | "templates" | "users";
 
@@ -40,13 +48,19 @@ export default function DevPortal() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-app, #f4f3f0)" }}>
-      <aside style={{ width: 220, background: "#16241a", color: "#f0efe9", padding: "20px 14px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 22, padding: "0 6px" }}>
-          <img src="/logo.png" alt="" style={{ width: 26, height: 26, borderRadius: 6 }} />
+    <div style={{ display: "flex", minHeight: "100vh", background: "var(--surface-app)" }}>
+      <aside style={{
+        width: 232, background: "var(--surface-inverse)", color: "var(--text-on-inverse)",
+        padding: "22px 14px", flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 24, padding: "0 6px" }}>
+          <img src="/logo.png" alt="" style={{ width: 26, height: 26, borderRadius: "var(--radius-sm)" }} />
           <div>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>Dare to Care</div>
-            <div style={{ fontSize: 10, color: "#e6b552", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Dev portal</div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text-on-inverse)" }}>Dare to Care</div>
+            <div style={{
+              fontFamily: "var(--font-label)", fontSize: 10, color: "#e6b552",
+              fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
+            }}>Dev portal</div>
           </div>
         </div>
 
@@ -61,9 +75,11 @@ export default function DevPortal() {
               key={key}
               onClick={() => setPage(key)}
               style={{
-                textAlign: "left", padding: "9px 10px", borderRadius: 7, border: "none", cursor: "pointer",
-                background: page === key ? "#26332a" : "transparent",
-                color: page === key ? "#fff" : "#c9d6cc", fontSize: 13.5, fontWeight: page === key ? 600 : 400,
+                textAlign: "left", padding: "10px 11px", borderRadius: "var(--radius-control)",
+                border: "none", cursor: "pointer", font: "inherit",
+                background: page === key ? "rgba(255,255,255,.09)" : "transparent",
+                color: page === key ? "var(--text-on-inverse)" : "rgba(241,246,241,.62)",
+                fontSize: 13.5, fontWeight: page === key ? 600 : 400,
               }}
             >
               {label}
@@ -71,20 +87,24 @@ export default function DevPortal() {
           ))}
         </nav>
 
-        <div style={{ marginTop: 30, paddingTop: 14, borderTop: "1px solid #2a3f30" }}>
-          <div style={{ fontSize: 11.5, color: "#9fc4ab", marginBottom: 8 }}>
+        <div style={{ marginTop: 30, paddingTop: 14, borderTop: "1px solid var(--border-inverse)" }}>
+          <div style={{ fontSize: 11.5, color: "rgba(241,246,241,.58)", marginBottom: 9, lineHeight: 1.5 }}>
             Signed in as {user?.name} — really a {user?.role}
           </div>
           <button
             onClick={returnToRealPortal}
-            style={{ width: "100%", background: "#2a3f30", color: "#f0efe9", border: "none", borderRadius: 7, padding: "8px 10px", fontSize: 12.5, cursor: "pointer" }}
+            style={{
+              width: "100%", background: "rgba(255,255,255,.08)", color: "var(--text-on-inverse)",
+              border: "1px solid var(--border-inverse-strong)", borderRadius: "var(--radius-control)",
+              padding: "9px 10px", fontSize: 12.5, cursor: "pointer", font: "inherit",
+            }}
           >
             ← Return to my {user?.role} portal
           </button>
         </div>
       </aside>
 
-      <main style={{ flex: 1, padding: "28px 32px", overflow: "auto" }}>
+      <main style={{ flex: 1, padding: "40px 44px", overflow: "auto" }}>
         {page === "health" && <SystemHealth />}
         {page === "deleted" && <DeletedItems />}
         {page === "templates" && <Templates />}
@@ -97,12 +117,17 @@ export default function DevPortal() {
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="ds-ph">
-        <div>
-          <h1>{title}</h1>
-          {sub && <p>{sub}</p>}
-        </div>
-      </div>
+      <header style={{ marginBottom: 28 }}>
+        <h1 style={{
+          margin: 0, fontFamily: "var(--font-display)", fontSize: 32, lineHeight: 1.15,
+          letterSpacing: "-0.02em", fontWeight: 500, color: "var(--text-brand)",
+        }}>{title}</h1>
+        {sub && (
+          <p style={{ margin: "12px 0 0", maxWidth: "62ch", fontSize: 14.5, lineHeight: 1.6, color: "var(--text-muted)" }}>
+            {sub}
+          </p>
+        )}
+      </header>
       {children}
     </div>
   );
@@ -110,15 +135,18 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
 
 /* ---------- System health ---------- */
 
+const HEALTH_TONE: Record<string, string> = { ok: "success", warn: "warning", stop: "error", manual: "neutral" };
+const HEALTH_WORD: Record<string, string> = { ok: "OK", warn: "Needs attention", stop: "Problem", manual: "Check by hand" };
+
 function StatusRow({ label, status, detail }: { label: string; status: "ok" | "warn" | "stop" | "manual"; detail: string }) {
-  const color = { ok: "#188045", warn: "#c98a1a", stop: "#c23b3b", manual: "#8a8a8a" }[status];
-  const text = { ok: "OK", warn: "Needs attention", stop: "Problem", manual: "Check manually" }[status];
   return (
-    <tr>
-      <td style={{ fontWeight: 600 }}>{label}</td>
-      <td><span style={{ color, fontWeight: 700, fontSize: 12.5 }}>{text}</span></td>
-      <td style={{ color: "var(--text-muted, #666)", fontSize: 13 }}>{detail}</td>
-    </tr>
+    <RecordRow
+      icon={<Icon name={status === "ok" ? "checkCircle" : status === "manual" ? "eye" : "alert"} size={17} />}
+      title={label}
+      subtitle={detail}
+      stamp={<Stamp tone={HEALTH_TONE[status]}>{HEALTH_WORD[status]}</Stamp>}
+      accentEdge={status === "warn" || status === "stop"}
+    />
   );
 }
 
@@ -139,42 +167,42 @@ function SystemHealth() {
 
   return (
     <Section title="System health" sub="The same checks from the runbook, live instead of remembered.">
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
-          <tbody>
-            <StatusRow
-              label="Forms filing to PDF"
-              status={pendingPdfs === 0 ? "ok" : "warn"}
-              detail={pendingPdfs === 0 ? "Nothing stuck." : `${pendingPdfs} submission(s) have a pending PDF — a filing or storage-permission failure.`}
-            />
-            <StatusRow
-              label="Certificates matched to a person"
-              status={unmatchedCerts === 0 ? "ok" : "warn"}
-              detail={unmatchedCerts === 0 ? "All certificates are matched." : `${unmatchedCerts} unmatched — see Admin → Certificates.`}
-            />
-            <StatusRow
-              label="Inbound review queue"
-              status={inboundOpen === 0 ? "ok" : "warn"}
-              detail={inboundOpen === 0 ? "Nothing waiting." : `${inboundOpen} item(s) waiting on a human match.`}
-            />
-            <StatusRow
-              label="Course modules tracked"
-              status={moduleCount > 0 ? "ok" : "manual"}
-              detail={moduleCount > 0 ? `${moduleCount} module(s) — this is the number the checklist requires, not a fixed six.` : "No certificates recorded yet, so nothing to count."}
-            />
-            <StatusRow
-              label="Storage policies applied"
-              status="manual"
-              detail="Not readable from the browser. Supabase dashboard → SQL editor: run supabase/storage.sql. These now check the caller's role against the users table, which the old Firebase rules could not do."
-            />
-            <StatusRow
-              label="Anonymous sign-ins enabled"
-              status="manual"
-              detail="Certificates from the course site depend on this and fail silently without it. Supabase dashboard → Authentication → Providers → Anonymous sign-ins."
-            />
-          </tbody>
-        </table>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 900 }}>
+        <StatusRow
+          label="Forms filing to PDF"
+          status={pendingPdfs === 0 ? "ok" : "warn"}
+          detail={pendingPdfs === 0 ? "Nothing stuck." : `${pendingPdfs} submission(s) have a pending PDF — a filing or storage-permission failure.`}
+        />
+        <StatusRow
+          label="Certificates matched to a person"
+          status={unmatchedCerts === 0 ? "ok" : "warn"}
+          detail={unmatchedCerts === 0 ? "All certificates are matched." : `${unmatchedCerts} unmatched — see Admin → Certificates.`}
+        />
+        <StatusRow
+          label="Inbound review queue"
+          status={inboundOpen === 0 ? "ok" : "warn"}
+          detail={inboundOpen === 0 ? "Nothing waiting." : `${inboundOpen} item(s) waiting on a human match.`}
+        />
+        <StatusRow
+          label="Course modules tracked"
+          status={moduleCount > 0 ? "ok" : "manual"}
+          detail={moduleCount > 0 ? `${moduleCount} module(s) — this is the number the checklist requires, not a fixed six.` : "No certificates recorded yet, so nothing to count."}
+        />
+        <StatusRow
+          label="Storage policies applied"
+          status="manual"
+          detail="Not readable from the browser. Supabase dashboard → SQL editor: run supabase/storage.sql. These check the caller's role against the users table, which the old Firebase rules could not do."
+        />
+        <StatusRow
+          label="Anonymous sign-ins enabled"
+          status="manual"
+          detail="Certificates from the course site depend on this and fail silently without it. Supabase dashboard → Authentication → Providers → Anonymous sign-ins."
+        />
+        <StatusRow
+          label="Text-message sign-in"
+          status="manual"
+          detail="Linking a phone needs an SMS provider on the project. Supabase dashboard → Authentication → Sign In / Providers → Phone. Without one, everybody who tries gets 'Unable to get SMS provider'."
+        />
       </div>
     </Section>
   );
@@ -188,7 +216,7 @@ function DeletedItems() {
   const [typed, setTyped] = useState("");
   // Used to live behind window.prompt() after the DELETE confirmation — a
   // native, synchronous dialog that blocks the page's JS thread until
-  // dismissed. Folded into this same modal instead: one flow, no blocking
+  // dismissed. Folded into this same dialog instead: one flow, no blocking
   // browser-chrome dialog to fight with (automation included).
   const [hardDeleteReason, setHardDeleteReason] = useState("");
   const deleted = Store.getDeletedSubmissions ? Store.getDeletedSubmissions() : [];
@@ -212,117 +240,113 @@ function DeletedItems() {
 
   return (
     <Section title="Deleted items" sub="Soft-deleted rows can be restored. Permanent delete is one step further and does not come back.">
-      <div className="ds-panel">
-        {deleted.length === 0 ? (
-          <p style={{ color: "var(--text-muted, #666)" }}>Nothing has been deleted.</p>
-        ) : (
-          <table className="ds-table">
-            <thead><tr><th>Form</th><th>Deleted by</th><th>When</th><th>Reason</th><th></th></tr></thead>
-            <tbody>
-              {deleted.map((s: any) => (
-                <tr key={s.id}>
-                  <td>{s.templateName || s.schemaKey}</td>
-                  <td>{s.deletedBy || "—"}</td>
-                  <td>{s.deletedAt ? new Date(s.deletedAt).toLocaleString() : "—"}</td>
-                  <td>{s.deleteReason || "—"}</td>
-                  <td style={{ display: "flex", gap: 6 }}>
-                    <button className="dbtn" onClick={() => restore(s.id)}>Restore</button>
-                    <button
-                      className="dbtn"
-                      style={{ color: "#c23b3b", borderColor: "#c23b3b" }}
-                      onClick={() => openConfirm(s.id)}
-                    >
-                      Delete permanently
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {confirming && target && (
-        <div
-          style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
-          }}
-          onClick={closeConfirm}
-        >
-          <div
-            style={{ background: "var(--bg-primary, #fff)", borderRadius: 10, padding: 24, maxWidth: 420, width: "90%" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ marginTop: 0, color: "#c23b3b" }}>This cannot be undone</h3>
-            <p style={{ fontSize: 13.5, lineHeight: 1.6 }}>
-              You're about to permanently delete <strong>{target.templateName || target.schemaKey}</strong>
-              {target.clientName || target.caregiverName ? <> for <strong>{target.clientName || target.caregiverName}</strong></> : null}.
-              Unlike everything else in this system, this record will not be recoverable and will not appear
-              anywhere again — not even here. A snapshot goes into the audit log, but the document itself is gone.
-            </p>
-            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Why is this being permanently deleted?</p>
-            <textarea
-              value={hardDeleteReason}
-              onChange={(e) => setHardDeleteReason(e.target.value)}
-              placeholder="Goes in the audit log."
-              rows={2}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ddd)", marginBottom: 14, font: "inherit", resize: "vertical" }}
+      {deleted.length === 0 ? (
+        <EmptyState title="Nothing deleted" description="Soft-deleted submissions appear here, ready to restore." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 900 }}>
+          {deleted.map((s: any) => (
+            <RecordRow
+              key={s.id}
+              icon={<Icon name="trash" size={17} />}
+              title={s.templateName || s.schemaKey}
+              subtitle={[
+                s.deletedBy ? `Deleted by ${s.deletedBy}` : null,
+                s.deletedAt ? new Date(s.deletedAt).toLocaleString() : null,
+                s.deleteReason ? `“${s.deleteReason}”` : null,
+              ].filter(Boolean).join(" · ")}
+              stamp={<Stamp tone="neutral">Deleted</Stamp>}
+              actions={
+                <div style={{ display: "flex", gap: 6 }}>
+                  <Button size="sm" variant="outline" onClick={() => restore(s.id)}>Restore</Button>
+                  <Button size="sm" variant="danger" onClick={() => openConfirm(s.id)}>Delete for good</Button>
+                </div>
+              }
             />
-            <p style={{ fontSize: 13, fontWeight: 600 }}>Type DELETE to confirm.</p>
-            <input
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid var(--border, #ddd)", marginBottom: 14 }}
-              autoFocus
-            />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="dbtn" onClick={closeConfirm}>Cancel</button>
-              <button
-                className="dbtn"
-                disabled={typed !== "DELETE"}
-                style={{ background: typed === "DELETE" ? "#c23b3b" : undefined, color: typed === "DELETE" ? "#fff" : undefined, opacity: typed === "DELETE" ? 1 : 0.5 }}
-                onClick={confirmHardDelete}
-              >
-                Permanently delete
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
       )}
+
+      {/* The only irreversible action in the product, so it asks for a typed
+          confirmation AND a reason — the reason is what the audit log keeps
+          once the document itself is gone. */}
+      <Dialog
+        open={!!confirming && !!target}
+        title="This cannot be undone"
+        icon={<Icon name="alert" size={20} />}
+        onClose={closeConfirm}
+        width={520}
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeConfirm}>Cancel</Button>
+            <Button variant="solid_danger" disabled={typed !== "DELETE"} onClick={confirmHardDelete}>
+              Permanently delete
+            </Button>
+          </>
+        }
+      >
+        {target && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.65 }}>
+              You are about to permanently delete <strong>{target.templateName || target.schemaKey}</strong>
+              {target.clientName || target.caregiverName ? <> for <strong>{target.clientName || target.caregiverName}</strong></> : null}.
+              Unlike everything else in this system, this record will not be recoverable and will not
+              appear anywhere again — not even here. A snapshot goes into the audit log, but the
+              document itself is gone.
+            </Text>
+            <Textarea
+              label="Why is this being permanently deleted?"
+              rows={2}
+              placeholder="Goes in the audit log."
+              value={hardDeleteReason}
+              onChange={(e: any) => setHardDeleteReason(e.target.value)}
+            />
+            <Input
+              label="Type DELETE to confirm"
+              value={typed}
+              onChange={(e: any) => setTyped(e.target.value)}
+              autoFocus
+            />
+          </div>
+        )}
+      </Dialog>
     </Section>
   );
 }
 
-/* ---------- Templates (scaffold — read-only for now) ---------- */
+/* ---------- Templates (read-only) ---------- */
 
 function Templates() {
   const rows = Object.entries(DTC.schemas || {});
 
   return (
-    <Section title="Templates" sub="The form definitions every submission is built from. Editing here is next — for now this is a real list, not a mock.">
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead><tr><th>Form</th><th>Subject</th><th>Fields</th></tr></thead>
-          <tbody>
-            {rows.map(([key, schema]: any) => {
-              const fieldCount = (schema.sections || []).reduce((n: number, s: any) => n + (s.fields || []).length, 0);
-              return (
-                <tr key={key}>
-                  <td>{schema.name || key}</td>
-                  <td>{schema.subject}</td>
-                  <td>{fieldCount}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <Section title="Templates" sub="The form definitions every submission is built from. Read-only here — editing happens in the admin form builder.">
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 900 }}>
+        {rows.map(([key, schema]: any) => {
+          const fieldCount = (schema.sections || []).reduce((n: number, s: any) => n + (s.fields || []).length, 0);
+          return (
+            <RecordRow
+              key={key}
+              icon={<Icon name="layers" size={17} />}
+              title={schema.name || key}
+              subtitle={`${schema.subject} · ${fieldCount} ${fieldCount === 1 ? "field" : "fields"}`}
+              meta={key}
+            />
+          );
+        })}
       </div>
     </Section>
   );
 }
 
 /* ---------- Users & roles ---------- */
+
+const DEV_ROLES = [
+  { value: "caregiver", label: "Caregiver" },
+  { value: "officeManager", label: "Office manager" },
+  { value: "admin", label: "Admin" },
+  { value: "newHire", label: "New hire" },
+  { value: "client", label: "Client" },
+];
 
 function UsersRoles() {
   const [, force] = useState(0);
@@ -339,33 +363,34 @@ function UsersRoles() {
   };
 
   return (
-    <Section title="Users & roles" sub="Change someone's real job here, or grant/revoke dev access. Both are logged.">
-      <div className="ds-panel">
-        <table className="ds-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Dev access</th></tr></thead>
-          <tbody>
-            {users.map((u: any) => (
-              <tr key={u.id}>
-                <td>{u.name}</td>
-                <td>{u.email}</td>
-                <td>
-                  <select value={u.role} onChange={(e) => setRole(u.id, e.target.value)}>
-                    <option value="caregiver">Caregiver</option>
-                    <option value="officeManager">Office Manager</option>
-                    <option value="admin">Admin</option>
-                    <option value="newHire">New Hire</option>
-                    <option value="client">Client</option>
-                  </select>
-                </td>
-                <td>
-                  <button className="dbtn" onClick={() => toggleDev(u.id, !!u.devAccess)}>
-                    {u.devAccess ? "Revoke" : "Grant"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <Section
+      title="Users & roles"
+      sub="Change someone's real job here, or grant and revoke dev access. Both are logged, and the database rejects a self-write that grants dev access."
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 940 }}>
+        {users.map((u: any) => (
+          <RecordRow
+            key={u.id}
+            icon={<Icon name="users" size={17} />}
+            title={u.name}
+            subtitle={u.email}
+            stamp={u.devAccess ? <Stamp tone="info">Dev access</Stamp> : null}
+            actions={
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }} onClick={(e: any) => e.stopPropagation()}>
+                <div style={{ width: 170 }}>
+                  <Select value={u.role} onChange={(e: any) => setRole(u.id, e.target.value)} options={DEV_ROLES} />
+                </div>
+                <Button
+                  size="sm"
+                  variant={u.devAccess ? "danger" : "outline"}
+                  onClick={() => toggleDev(u.id, !!u.devAccess)}
+                >
+                  {u.devAccess ? "Revoke" : "Grant"}
+                </Button>
+              </div>
+            }
+          />
+        ))}
       </div>
     </Section>
   );

@@ -116,7 +116,13 @@
 
 /* ── Rail foot: the signed-in person ──────────────────────────────────────── */
 
-.shell-sidebar-foot { border-top: 1px solid var(--border-inverse); }
+/* Pinned by styles/shell.css; this restates the surface so the dark rail's own
+   colour sits behind it rather than the light one from the base sheet. */
+.shell-sidebar-foot {
+  border-top: 1px solid var(--border-inverse);
+  background: var(--surface-inverse);
+  backdrop-filter: none;
+}
 
 .shell-user-info strong { color: var(--text-on-inverse); }
 .shell-user-info span { color: rgba(241, 246, 241, .58); }

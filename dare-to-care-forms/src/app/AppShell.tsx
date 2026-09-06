@@ -6,6 +6,15 @@ import { DTCStore as Store } from "../components/store";
 import { supabase } from "../config/supabase";
 // @ts-ignore - JS module without types
 import { update } from "../lib/db.js";
+/** Actions the shell owns, made reachable from the screens it renders. */
+interface ShellActions {
+  openLinkPhone: () => void;
+}
+const ShellActionsContext = React.createContext<ShellActions>({ openLinkPhone: () => {} });
+export function useShellActions() {
+  return React.useContext(ShellActionsContext);
+}
+
 interface NavItem {
   to: string;
   label: string;
@@ -164,6 +173,15 @@ function NavIcon({ name }: { name: string }) {
       </>
     ),
     chevDown: <path d="M6 9l6 6 6-6" />,
+    idCard: (
+      <>
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <circle cx="9" cy="10" r="2" />
+        <path d="M6 16c.5-1.5 1.7-2.5 3-2.5s2.5 1 3 2.5" />
+        <path d="M15 9h4M15 13h4" />
+      </>
+    ),
+    phone: <path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.2a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z" />,
     eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>,
   };
   return <svg {...svgProps}>{icons[name] || null}</svg>;
@@ -210,6 +228,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [linkConfirmation, setLinkConfirmation] = useState<{ phone: string } | null>(null);
   const [isLinking, setIsLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  // Set once a link succeeds, so the confirmation lives in the page rather than
+  // in a browser dialog the rest of the app never uses.
+  const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
 
   const openLinkPhoneModal = () => {
     setUserMenuOpen(false);
@@ -219,6 +240,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setPhoneToLink("");
     setLinkCode("");
     // No reCAPTCHA to prepare — that was a Firebase phone-auth requirement.
+  };
+
+  // Turn an auth error into something the person reading it can act on.
+  //
+  // "Unable to get SMS provider" is what Supabase returns when phone sign-in is
+  // switched on for the project but no SMS provider is configured behind it.
+  // That is a workspace setup problem, not something the person clicking the
+  // button did wrong or can fix, and showing them the raw string just leaves
+  // them retrying a button that cannot work.
+  const explainAuthError = (message: string): string => {
+    const m = (message || "").toLowerCase();
+    if (m.includes("sms provider") || m.includes("error sending confirmation") || m.includes("sms_send_failed")) {
+      return "Text-message sign-in isn't switched on for this workspace yet, so no code can be sent. An admin has to connect an SMS service in the Supabase project first.";
+    }
+    if (m.includes("already registered") || m.includes("already been registered")) {
+      return "That number is already linked to another account.";
+    }
+    if (m.includes("invalid") && m.includes("phone")) {
+      return "That doesn't look like a valid phone number. Use a 10-digit US number.";
+    }
+    if (m.includes("expired")) return "That code has expired. Send a new one.";
+    if (m.includes("token") || m.includes("otp")) return "That code isn't right. Check it and try again.";
+    if (m.includes("rate") || m.includes("too many")) return "Too many attempts. Wait a minute and try again.";
+    return message || "Something went wrong.";
   };
 
   // Attaching a phone to an existing account. Firebase called this "linking" a
@@ -236,7 +281,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       if (error) throw new Error(error.message);
       setLinkConfirmation({ phone: formattedPhone } as any);
     } catch (err: any) {
-      setLinkError(err.message || "Failed to send code.");
+      setLinkError(explainAuthError(err.message || "Failed to send code."));
     } finally {
       setIsLinking(false);
     }
@@ -257,9 +302,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       // Mirror it onto the profile row, which is what the rest of the app reads.
       await update("users", data.user!.id, { phone: data.user!.phone });
       setShowLinkPhone(false);
-      alert("Phone number linked successfully! You can now log in using your phone number.");
+      setLinkedPhone(data.user!.phone || formattedPhone);
     } catch (err: any) {
-      setLinkError(err.message || "Invalid code.");
+      setLinkError(explainAuthError(err.message || "Invalid code."));
     } finally {
       setIsLinking(false);
     }
@@ -444,10 +489,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 className="shell-logout"
                 style={{ borderBottom: '1px solid var(--border)', borderRadius: '8px 8px 0 0' }}
+                onClick={() => { setUserMenuOpen(false); navigate("/profile"); }}
+              >
+                <NavIcon name="idCard" />
+                My profile
+              </button>
+              <button
+                className="shell-logout"
+                style={{ borderBottom: '1px solid var(--border)' }}
                 onClick={openLinkPhoneModal}
               >
-                <NavIcon name="clock" />
-                Link Phone Number
+                <NavIcon name="phone" />
+                Link phone number
               </button>
               <button
                 className="shell-logout"
@@ -483,12 +536,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             You're offline — forms will be queued and submitted when you reconnect
           </div>
         )}
-        <div className="shell-main-inner">{children}</div>
+        <div className="shell-main-inner">
+          <ShellActionsContext.Provider value={{ openLinkPhone: openLinkPhoneModal }}>
+            {children}
+          </ShellActionsContext.Provider>
+        </div>
         <footer className="shell-footer">
           <span>Dare to Care · Home Care Platform</span>
           <span>Role-based access · Secure PDFs</span>
         </footer>
       </main>
+
+      {linkedPhone && (
+        <div
+          role="status"
+          className="offline-banner"
+          style={{ background: "var(--success-bg, #E4F0E7)", color: "var(--status-success, #1E6848)" }}
+        >
+          <span>Phone number linked — you can now sign in with {linkedPhone}.</span>
+          <button className="preview-banner-exit" onClick={() => setLinkedPhone(null)}>Dismiss</button>
+        </div>
+      )}
 
       {showLinkPhone && (
         <div className="modal-overlay" onClick={() => !isLinking && setShowLinkPhone(false)}>

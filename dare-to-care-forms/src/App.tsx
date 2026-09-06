@@ -8,6 +8,7 @@ import DevPortal from './features/dev/DevPortal';
 import SetupPage from './app/SetupPage';
 import ChangePasswordPage from './app/ChangePasswordPage';
 import AppShell from './app/AppShell';
+import { ProfileRoute } from './app/ProfileRoute';
 import ProtectedRoute from './app/ProtectedRoute';
 import CoursesPage from './app/CoursesPage';
 import { CaregiverDashboard } from './features/caregiver/CaregiverDashboard';
@@ -137,6 +138,14 @@ export default function App() {
           <Route path="/courses" element={
             <ProtectedRoute allowedRoles={['admin', 'caregiver', 'officeManager']}>
               <AppShell><CoursesPage /></AppShell>
+            </ProtectedRoute>
+          } />
+
+          {/* Everyone has an account, so everyone gets a profile. Not role-gated:
+              the screen shows the signed-in person their own record. */}
+          <Route path="/profile" element={
+            <ProtectedRoute allowedRoles={['admin', 'caregiver', 'officeManager', 'newHire', 'client']}>
+              <AppShell><ProfileRoute /></AppShell>
             </ProtectedRoute>
           } />
 

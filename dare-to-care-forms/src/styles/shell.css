@@ -156,6 +156,16 @@ html, body, #root {
 .shell-sidebar-foot {
   padding: 14px;
   margin-top: auto;
+  /* The rail scrolls once there are enough nav items, and the signed-in person
+     used to scroll away with it — so sign-out and account settings were only
+     reachable by scrolling to the bottom of a list you were not reading. It
+     stays pinned instead. The background is opaque here because nav items pass
+     underneath it, and the rail's own surface is translucent. */
+  position: sticky;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(198, 230, 216, 0.7);
 }
 
 .shell-user {

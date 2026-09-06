@@ -1,13 +1,39 @@
+// The new hire's own screen — the whole of onboarding, in the order it happens.
+//
+// WHY THIS SCREEN IS DIFFERENT FROM THE OTHERS
+// Everyone else using this app is at work. A new hire is not yet: they have no
+// clients, no history, and no idea what this software is. They are here to be
+// told what to do next, do it, and find out whether it worked. So the screen is
+// organised around a single question — whose move is it right now — rather than
+// around the data it happens to hold.
+//
+// That question has four possible answers and the page states exactly one of
+// them at all times: finish your paperwork, wait for your office manager to
+// release training, finish your training, or wait to be verified. Two of those
+// are waiting states where the next move is somebody else's, and saying so
+// plainly is the whole point — a new hire staring at a screen with nothing to
+// click and no explanation assumes the system is broken.
+//
+// WHAT IS DELIBERATELY NOT SELF-SERVE
+// Training is released by a person, not by a rule. Paperwork being complete is
+// necessary but not sufficient: an office manager reviews it and releases the
+// courses. Course completion likewise cannot be claimed here — a step is done
+// only when a real certificate comes back from the course site.
+
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../app/AuthContext";
 // @ts-ignore
 import { DTCStore as Store } from "../../components/store";
 // @ts-ignore
-import { Icon } from "../../components/fields";
-// @ts-ignore
 import { TRAINING_MODULES } from "../../components/trainingModules";
 import { FormWizard, RecordViewer, getSchema } from "../../components/forms/FormWizard";
 import { fmtDate } from "../../utils/format";
+import {
+  Icon, Button, Stamp, MonoLabel, Panel, RecordRow, DocumentSlot, Chip, Text, Dialog,
+  // @ts-ignore - design system is untyped JSX
+} from "../../design/index.js";
+// @ts-ignore - untyped JSX
+import { SheetHeader } from "../../console/Chrome.jsx";
 
 // The New Hire Packet, in the order it is signed. Training is deliberately NOT
 // part of this list: courses are the last thing a caregiver does before being
@@ -41,17 +67,44 @@ export function paperworkComplete(filedKeys: Set<string>) {
   return singlesDone && pairsDone;
 }
 
-// TRAINING_MODULES now lives in components/trainingModules.js (imported
-// above) so NewHirePortal and the admin Certificates panel share one list
-// instead of drifting out of sync. Its ids/titles must match
-// window.DTC_COURSES in the dtccourses repo exactly — that's how a
-// completed course certificate gets matched back to a checklist step.
+type Requirement = { id: string; keys: string[]; either: boolean; done: boolean };
+
+/**
+ * The packet as things that must be satisfied, rather than as a list of files.
+ *
+ * The distinction matters because one requirement — the job description — is
+ * met by signing either of two forms. Counting raw keys told a new hire they
+ * had "2 forms left" when only one of them was ever going to be asked of them,
+ * and the checklist showed both as outstanding forever.
+ *
+ * Order follows the packet: a pair appears where its first member sits.
+ */
+function buildRequirements(filedKeys: Set<string>): Requirement[] {
+  const pairFor = new Map<string, string[]>();
+  for (const pair of EITHER_OR_FORMS) for (const k of pair) pairFor.set(k, pair);
+
+  const seen = new Set<string>();
+  const reqs: Requirement[] = [];
+  for (const key of NEW_HIRE_FORM_KEYS) {
+    if (seen.has(key)) continue;
+    const pair = pairFor.get(key);
+    if (pair) {
+      pair.forEach((k) => seen.add(k));
+      reqs.push({ id: pair.join("|"), keys: pair, either: true, done: pair.some((k) => filedKeys.has(k)) });
+    } else {
+      seen.add(key);
+      reqs.push({ id: key, keys: [key], either: false, done: filedKeys.has(key) });
+    }
+  }
+  return reqs;
+}
 
 type OnboardingStep = {
   id: string;
   title: string;
   desc: string;
   duration: string;
+  icon: string;
   training?: boolean;
   requiresForms?: boolean;
 };
@@ -60,21 +113,24 @@ const onboardingSteps: OnboardingStep[] = [
   {
     id: "welcome",
     title: "Welcome orientation",
-    desc: "Review the company overview, mission, and your role at DARE to Care Home Care.",
+    desc: "Review the company overview, mission, and your role at Dare to Care Home Care.",
     duration: "15 min",
+    icon: "hands",
   },
   {
     id: "paperwork",
     title: "Complete your paperwork",
     desc: "File your required new-hire forms and policy acknowledgements below.",
     duration: "30 min",
+    icon: "fileText",
     requiresForms: true,
   },
-  ...TRAINING_MODULES.map((m) => ({
+  ...TRAINING_MODULES.map((m: any) => ({
     id: m.id,
     title: m.title,
     desc: m.desc,
     duration: `${m.minutes} min video + quiz`,
+    icon: "video",
     training: true,
   })),
   {
@@ -82,23 +138,42 @@ const onboardingSteps: OnboardingStep[] = [
     title: "Shadow a senior caregiver",
     desc: "Observe an experienced caregiver on a real visit before your first solo shift.",
     duration: "4 hours",
+    icon: "users",
   },
 ];
 
-function CheckIcon() {
+/** A plain horizontal meter. The figure beside it is the thing people read. */
+function Progress({ done, total }: { done: number; total: number }) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-      <path d="M7 11V7a5 5 0 0110 0v4"/>
-    </svg>
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+        <span style={{
+          fontFamily: "var(--font-figure)", fontSize: 30, lineHeight: 1,
+          color: "var(--text-brand)", fontVariantNumeric: "tabular-nums",
+        }}>{pct}%</span>
+        <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+          {done} of {total} steps
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        style={{
+          height: 7, borderRadius: "var(--radius-pill)",
+          background: "var(--surface-sunken)", overflow: "hidden",
+        }}
+      >
+        <div style={{
+          width: `${pct}%`, height: "100%",
+          background: "var(--brand-primary)",
+          borderRadius: "var(--radius-pill)",
+          transition: "width var(--duration-slow, 400ms) var(--ease-standard)",
+        }} />
+      </div>
+    </div>
   );
 }
 
@@ -139,6 +214,7 @@ export default function NewHirePortal() {
   // what the person actually finished on courses.daretocarehomecare.com.
   const passedCourseIds = useMemo(() => new Set(myCerts.map((c: any) => c.courseId)), [myCerts]);
   const filedFormKeys = useMemo(() => new Set(myForms.map((f: any) => f.schemaKey)), [myForms]);
+  const requirements = useMemo(() => buildRequirements(filedFormKeys), [filedFormKeys]);
   const paperworkDone = paperworkComplete(filedFormKeys);
 
   // Courses are the last thing before being hired on, so they are not self-serve.
@@ -149,15 +225,17 @@ export default function NewHirePortal() {
   const coursesReleased = !!(user as any)?.coursesUnlockedAt;
   const coursesUnlocked = paperworkDone && coursesReleased;
 
-  const coursesDone = TRAINING_MODULES.every((m) => passedCourseIds.has(m.id));
-  const coursesRemaining = TRAINING_MODULES.filter((m) => !passedCourseIds.has(m.id)).length;
-  const formsRemaining = NEW_HIRE_FORM_KEYS.filter((k) => !filedFormKeys.has(k)).length;
+  const coursesDone = TRAINING_MODULES.every((m: any) => passedCourseIds.has(m.id));
+  const coursesRemaining = TRAINING_MODULES.filter((m: any) => !passedCourseIds.has(m.id)).length;
+  // Counted from requirements, not from raw keys: the two job descriptions are
+  // one requirement, and counting both overstated what is left to do.
+  const formsRemaining = requirements.filter((r) => !r.done).length;
 
   // Exactly one message, always present, describing whose move it is now.
   const nextStep: { title: string; detail: string; waiting?: boolean } = (() => {
     if (!paperworkDone) {
       return {
-        title: `Next: finish your paperwork — ${formsRemaining} form${formsRemaining === 1 ? "" : "s"} left`,
+        title: `Finish your paperwork — ${formsRemaining} form${formsRemaining === 1 ? "" : "s"} left`,
         detail:
           "Work through the forms below. They're the New Hire Packet — job description, policies, and acknowledgements. You can stop and come back; each one saves when you submit it.",
       };
@@ -172,7 +250,7 @@ export default function NewHirePortal() {
     }
     if (!coursesDone) {
       return {
-        title: `Next: complete your training — ${coursesRemaining} course${coursesRemaining === 1 ? "" : "s"} left`,
+        title: `Complete your training — ${coursesRemaining} course${coursesRemaining === 1 ? "" : "s"} left`,
         detail:
           "Your training has been released. Open each course below; your certificate comes back here automatically when you pass, so there's nothing to send in.",
       };
@@ -185,7 +263,7 @@ export default function NewHirePortal() {
     };
   })();
 
-  const isStepDone = (step: any) => {
+  const isStepDone = (step: OnboardingStep) => {
     if (step.id === "welcome") return true; // orientation is informational; nothing to file
     if (step.training) return passedCourseIds.has(step.id);
     if (step.requiresForms) return paperworkDone;
@@ -194,7 +272,7 @@ export default function NewHirePortal() {
 
   const totalSteps = onboardingSteps.length;
   const completedCount = onboardingSteps.filter(isStepDone).length;
-  const progressPct = Math.round((completedCount / totalSteps) * 100);
+  const allDone = completedCount === totalSteps;
 
   // Open the course site as the same signed-in profile (no second login), deep
   // linked to the specific module so the training step and the course site stay
@@ -218,186 +296,241 @@ export default function NewHirePortal() {
     }
   };
 
+  const firstName = user?.name?.split(" ")[0] || "there";
+  const nextFormKey = requirements.find((r) => !r.done)?.keys[0];
+
   return (
-    <div className="newhire-portal">
-      {/* Hero */}
-      <div className="newhire-hero">
-        <div className="newhire-hero-eyebrow">New Hire Onboarding</div>
-        <h1>Welcome, {user?.name?.split(" ")[0] || "there"}!</h1>
-        <p>
-          We're glad you're here. Complete each step below at your own pace — you'll have full access to the caregiver portal once your onboarding is finished.
-        </p>
-      </div>
+    <>
+      <SheetHeader
+        eyebrow="New hire / Onboarding"
+        title={`Welcome, ${firstName}`}
+        lead="Everything you need to do before your first shift, in the order it happens. Work at your own pace — each step saves as you go."
+      />
 
-      {/* What happens next. A new hire should never be looking at a screen with
-          nothing actionable and no explanation — especially in the two waiting
-          states, where the next move belongs to the office manager and not to
-          them. */}
-      <div
-        className="card"
-        style={{
-          padding: "14px 16px",
-          marginBottom: 16,
-          borderLeft: `3px solid ${nextStep.waiting ? "var(--amber)" : "var(--accent)"}`,
-        }}
+      {/* Whose move is it. This is the most important element on the screen and
+          is the reason the page exists, so it leads and it is never absent. */}
+      <Panel
+        accentEdge
+        tone={nextStep.waiting ? "sunken" : "default"}
+        padding={22}
+        style={{ marginBottom: 30, maxWidth: 760 }}
       >
-        <div style={{ fontSize: 13.5, fontWeight: 650, marginBottom: 3 }}>{nextStep.title}</div>
-        <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{nextStep.detail}</div>
-      </div>
-
-      {/* Progress */}
-      <div className="newhire-progress-card">
-        <div className="newhire-progress-label">
-          Your progress — {completedCount} of {totalSteps} steps completed
-        </div>
-        <div className="newhire-progress-bar">
-          <div className="newhire-progress-fill" style={{ width: `${progressPct}%` }} />
-        </div>
-        <div className="newhire-progress-pct">{progressPct}% complete</div>
-      </div>
-
-      {/* Steps */}
-      <div className="newhire-section-title">Onboarding checklist</div>
-      <div className="newhire-steps">
-        {onboardingSteps.map((step, idx) => {
-          const isDone = isStepDone(step);
-          // Training modules can be taken in any order (same as the course site);
-          // only "shadow" waits on everything else being real.
-          const isLocked = !isDone && step.id === "shadow" && !onboardingSteps.filter((s) => s.id !== "shadow").every(isStepDone);
-
-          return (
-            <div
-              key={step.id}
-              className={`newhire-step ${isDone ? "is-done" : ""} ${isLocked ? "locked" : ""}`}
-            >
-              <div className="newhire-step-num">
-                {isDone ? <CheckIcon /> : isLocked ? <LockIcon /> : idx + 1}
-              </div>
-              <div className="newhire-step-body">
-                <strong>{step.title}</strong>
-                <span>{step.desc}</span>
-                {step.duration && (
-                  <span style={{ display: "block", marginTop: 6, fontSize: 11, color: "var(--accent-2)", fontWeight: 700 }}>
-                    ⏱ {step.duration}
-                  </span>
-                )}
-              </div>
-              {/* Training that hasn't been released yet shows why, rather than a
-                  dead button. Paperwork first, then a person releases it. */}
-              {step.training && !isDone && !coursesUnlocked && (
-                <span style={{ fontSize: 11.5, color: "var(--ink-3)", flexShrink: 0, textAlign: "right", maxWidth: 150 }}>
-                  {!paperworkDone
-                    ? "Finish your paperwork first"
-                    : "Waiting on your office manager to release training"}
-                </span>
-              )}
-              {!isLocked && step.id !== "shadow" && !(step.training && !isDone && !coursesUnlocked) && (
-                <button
-                  className={`newhire-step-action ${isDone ? "is-done" : ""}`}
-                  onClick={() => {
-                    if (isDone) return;
-                    if (step.training) { void openCourseModule(step.id); return; }
-                    if (step.requiresForms) {
-                      const nextKey = NEW_HIRE_FORM_KEYS.find((k) => !filedFormKeys.has(k));
-                      if (nextKey) setWizardKey(nextKey);
-                      return;
-                    }
-                  }}
-                  disabled={isDone || opening === step.id}
-                >
-                  {isDone ? "Done ✓" : opening === step.id ? "Opening…" : step.training ? "Start on courses site" : step.requiresForms ? "Fill out" : "Begin"}
-                </button>
-              )}
-              {step.id === "shadow" && (
-                <span style={{ fontSize: 11.5, color: "var(--ink-3)", flexShrink: 0, textAlign: "right", maxWidth: 120 }}>
-                  {isDone ? "Confirmed ✓" : isLocked ? "Unlocks after training" : "Signed off by your office manager"}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Required forms & acknowledgements */}
-      <div className="newhire-section-title">Required forms &amp; acknowledgements</div>
-      <div className="client-forms-grid">
-        {NEW_HIRE_FORM_KEYS.map((key) => {
-          const schema = getSchema(key);
-          if (!schema) return null;
-          const filed = myForms.some((s: any) => s.schemaKey === key);
-          return (
-            <button key={key} className="client-form-card" onClick={() => setWizardKey(key)}>
-              <div className="client-form-icon"><Icon n={schema.icon || "file"} s={22} /></div>
-              <div style={{ flex: 1, textAlign: "left" }}>
-                <strong>{schema.name}</strong>
-                <span>{schema.description}</span>
-              </div>
-              {filed
-                ? <span className="stat ok" style={{ flexShrink: 0 }}>Filed ✓</span>
-                : <Icon n="chevron" s={16} style={{ color: "var(--ink-4)", flexShrink: 0 }} />}
-            </button>
-          );
-        })}
-      </div>
-
-      {myForms.length > 0 && (
-        <>
-          <div className="newhire-section-title">Your submitted forms</div>
-          <div className="card" style={{ padding: "4px 16px" }}>
-            {myForms.map((sub: any) => {
-              const schema = getSchema(sub.schemaKey);
-              return (
-                <button className="subrow" key={sub.id} onClick={() => setViewing(sub)}>
-                  <span className="si"><Icon n={schema?.icon || "file"} s={18} /></span>
-                  <span className="sinfo">
-                    <span className="nm">{schema?.name || sub.schemaKey}</span>
-                    <span className="meta">{sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : "—"}</span>
-                  </span>
-                  <span className="stat">Filed</span>
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {myCerts.length > 0 && (
-        <>
-          <div className="newhire-section-title">Your training certificates</div>
-          <div className="card" style={{ padding: "4px 16px" }}>
-            {myCerts.map((c: any) => (
-              <div className="subrow" key={c.id}>
-                <span className="si"><Icon n="checkCircle" s={18} /></span>
-                <span className="sinfo">
-                  <span className="nm">{c.courseTitle || c.courseId}</span>
-                  <span className="meta">
-                    {c.score != null ? `${c.score}% · ` : ""}
-                    {c.date ? fmtDate(String(c.date).slice(0, 10)) : ""} · from courses.daretocarehomecare.com
-                  </span>
-                </span>
-                <span className="stat ok">Passed</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {progressPct === 100 && (
-        <div style={{
-          marginTop: 28,
-          padding: "24px 28px",
-          borderRadius: 20,
-          background: "linear-gradient(135deg, rgba(47,138,104,0.12), rgba(47,138,104,0.06))",
-          border: "1px solid rgba(47,138,104,0.25)",
-          textAlign: "center",
-        }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>🎉</div>
-          <strong style={{ display: "block", fontSize: 18, marginBottom: 8 }}>Onboarding complete!</strong>
-          <span style={{ color: "var(--ink-3)", fontSize: 13 }}>
-            Your administrator will review your progress and upgrade your account to full caregiver access.
+        <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          <span style={{
+            display: "grid", placeItems: "center", width: 38, height: 38, flex: "0 0 auto",
+            borderRadius: "var(--radius-sm)",
+            background: nextStep.waiting ? "var(--surface-sunken)" : "var(--surface-accent)",
+            color: nextStep.waiting ? "var(--text-secondary)" : "var(--brand-accent)",
+          }}>
+            <Icon name={nextStep.waiting ? "clock" : "sparkle"} size={19} />
           </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-body)", marginBottom: 6 }}>
+              {nextStep.title}
+            </div>
+            <Text role="body" color="secondary" style={{ fontSize: 14, lineHeight: 1.6 }}>
+              {nextStep.detail}
+            </Text>
+            {!nextStep.waiting && !paperworkDone && nextFormKey && (
+              <Button
+                style={{ marginTop: 16 }}
+                iconRight={<Icon name="chevron" size={16} />}
+                onClick={() => setWizardKey(nextFormKey)}
+              >
+                Continue where you left off
+              </Button>
+            )}
+          </div>
         </div>
-      )}
+      </Panel>
+
+      <div className="split" style={{ alignItems: "start" }}>
+        <section style={{ display: "flex", flexDirection: "column", gap: 34 }}>
+          <div>
+            <MonoLabel rule count={requirements.length} style={{ marginBottom: 14 }}>
+              Your paperwork
+            </MonoLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {requirements.map((req, i) => {
+                // An either/or requirement names both forms, because which one
+                // applies depends on the role this person was hired into and
+                // the packet expects them to know which is theirs.
+                const schemas = req.keys.map((k) => getSchema(k)).filter(Boolean);
+                if (schemas.length === 0) return null;
+                const filedKey = req.keys.find((k) => filedFormKeys.has(k));
+                const name = req.either
+                  ? schemas.map((s: any) => s.name).join("  or  ")
+                  : schemas[0].name;
+                return (
+                  <DocumentSlot
+                    key={req.id}
+                    index={i + 1}
+                    name={name}
+                    state={req.done ? "filed" : "missing"}
+                    meta={
+                      req.done
+                        ? (getSchema(filedKey!) as any)?.name
+                        : req.either
+                          ? "Sign whichever matches your role"
+                          : schemas[0].description
+                    }
+                    action={
+                      req.done ? null : (
+                        <Button size="sm" variant="outline" onClick={() => setWizardKey(req.keys[0])}>
+                          Fill out
+                        </Button>
+                      )
+                    }
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <MonoLabel rule count={totalSteps} style={{ marginBottom: 14 }}>
+              Onboarding checklist
+            </MonoLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {onboardingSteps.map((step) => {
+                const done = isStepDone(step);
+                // Training modules can be taken in any order (same as the course
+                // site); only "shadow" waits on everything else being real.
+                const locked =
+                  !done && step.id === "shadow" &&
+                  !onboardingSteps.filter((s) => s.id !== "shadow").every(isStepDone);
+                const trainingBlocked = !!step.training && !done && !coursesUnlocked;
+
+                let note: string | null = null;
+                if (step.id === "shadow") {
+                  note = done ? "Confirmed" : locked ? "Unlocks after training" : "Signed off by your office manager";
+                } else if (trainingBlocked) {
+                  note = paperworkDone
+                    ? "Waiting on your office manager to release training"
+                    : "Finish your paperwork first";
+                }
+
+                const showAction = !locked && step.id !== "shadow" && !trainingBlocked && !done;
+
+                return (
+                  <RecordRow
+                    key={step.id}
+                    icon={<Icon name={done ? "checkCircle" : locked || trainingBlocked ? "lock" : step.icon} size={17} />}
+                    title={step.title}
+                    subtitle={step.desc}
+                    meta={step.duration}
+                    stamp={
+                      done ? <Stamp tone="success">Done</Stamp>
+                        : locked || trainingBlocked ? <Stamp tone="neutral">Locked</Stamp>
+                          : <Stamp tone="brand">To do</Stamp>
+                    }
+                    accentEdge={done}
+                    actions={
+                      showAction ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={opening === step.id}
+                          onClick={() => {
+                            if (step.training) { void openCourseModule(step.id); return; }
+                            if (step.requiresForms && nextFormKey) setWizardKey(nextFormKey);
+                          }}
+                        >
+                          {opening === step.id ? "Opening…" : step.training ? "Start course" : step.requiresForms ? "Fill out" : "Begin"}
+                        </Button>
+                      ) : note ? (
+                        <span style={{
+                          fontSize: 12, color: "var(--text-quiet)", textAlign: "right",
+                          maxWidth: 160, display: "block", lineHeight: 1.45,
+                        }}>{note}</span>
+                      ) : null
+                    }
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {myForms.length > 0 && (
+            <div>
+              <MonoLabel rule count={myForms.length} style={{ marginBottom: 14 }}>
+                What you have filed
+              </MonoLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {myForms.map((sub: any) => {
+                  const schema = getSchema(sub.schemaKey);
+                  return (
+                    <RecordRow
+                      key={sub.id}
+                      icon={<Icon name="file" size={17} />}
+                      title={(schema as any)?.name || sub.schemaKey}
+                      subtitle={sub.submittedAt ? fmtDate(sub.submittedAt.slice(0, 10)) : ""}
+                      stamp={<Stamp tone="success">Filed</Stamp>}
+                      onClick={() => setViewing(sub)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <aside style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <Panel label="Your progress">
+            <Progress done={completedCount} total={totalSteps} />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18 }}>
+              <Chip icon={<Icon name="fileText" size={13} />}>
+                {formsRemaining === 0 ? "Paperwork done" : `${formsRemaining} form${formsRemaining === 1 ? "" : "s"} left`}
+              </Chip>
+              <Chip icon={<Icon name="video" size={13} />}>
+                {coursesDone ? "Training done" : `${coursesRemaining} course${coursesRemaining === 1 ? "" : "s"} left`}
+              </Chip>
+            </div>
+          </Panel>
+
+          <Panel label="Training certificates" labelRight={<Stamp tone="neutral" leaf={false}>{String(myCerts.length)}</Stamp>}>
+            {myCerts.length === 0 ? (
+              <Text role="body" color="quiet" style={{ fontSize: 13, lineHeight: 1.6 }}>
+                Certificates appear here on their own once you pass a course. There is nothing to send in.
+              </Text>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {myCerts.map((c: any) => (
+                  <RecordRow
+                    key={c.id}
+                    icon={<Icon name="award" size={17} />}
+                    title={c.courseTitle || c.courseId}
+                    subtitle={[
+                      c.score != null ? `${c.score}%` : null,
+                      c.date ? fmtDate(String(c.date).slice(0, 10)) : null,
+                    ].filter(Boolean).join(" · ")}
+                    stamp={<Stamp tone="success">Passed</Stamp>}
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          {allDone && (
+            <Panel tone="accent" padding={22}>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <span style={{ color: "var(--brand-accent)", flex: "0 0 auto" }}>
+                  <Icon name="leaf" size={22} />
+                </span>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-brand)", marginBottom: 6 }}>
+                    Onboarding complete
+                  </div>
+                  <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+                    Your office manager reviews everything and confirms your hire. You'll move to the caregiver
+                    portal automatically once they do.
+                  </Text>
+                </div>
+              </div>
+            </Panel>
+          )}
+        </aside>
+      </div>
 
       {wizardKey && (
         <FormWizard
@@ -410,18 +543,22 @@ export default function NewHirePortal() {
         />
       )}
 
-      {formDone && (
-        <div className="done">
-          <div className="badge-ok"><Icon n="check" s={38} sw={2.6} /></div>
-          <h3>Form submitted</h3>
-          <p>{formDone} has been filed.</p>
-          <div className="acts">
-            <button className="btn btn-primary btn-block" onClick={() => setFormDone(null)}>Done</button>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={!!formDone}
+        title="Form submitted"
+        description={formDone ? `${formDone} has been filed.` : ""}
+        icon={<Icon name="checkCircle" size={20} />}
+        onClose={() => setFormDone(null)}
+        footer={<Button onClick={() => setFormDone(null)}>Done</Button>}
+      >
+        <Text role="body" color="secondary" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          {formsRemaining > 0
+            ? `${formsRemaining} form${formsRemaining === 1 ? "" : "s"} left before your paperwork is complete.`
+            : "That was the last one — your paperwork now goes to your office manager."}
+        </Text>
+      </Dialog>
 
       {viewing && <RecordViewer sub={viewing} onClose={() => setViewing(null)} />}
-    </div>
+    </>
   );
 }
